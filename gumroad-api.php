@@ -40,9 +40,13 @@ class Gumroad_API_WordPress {
         add_action('wp_ajax_gumroad_test_api', array($this, 'test_api_connection'));
         add_action('wp_ajax_gumroad_clear_logs', array($this, 'clear_logs'));
         add_action('wp_ajax_gumroad_fetch_products', array($this, 'fetch_products'));
+        add_action('wp_ajax_gumroad_uninstall_plugin', array($this, 'uninstall_plugin_data'));
         
         // Add admin styles
         add_action('admin_head', array($this, 'admin_styles'));
+        
+        // Add plugin row meta for uninstall link
+        add_filter('plugin_row_meta', array($this, 'add_plugin_row_meta'), 10, 2);
     }
     
     /**
@@ -553,6 +557,15 @@ class Gumroad_API_WordPress {
             'manage_options',
             'gumroad-api-users',
             array($this, 'users_page')
+        );
+        
+        add_submenu_page(
+            'gumroad-api-dashboard',
+            __('Uninstall Plugin', 'snn'),
+            __('Uninstall Plugin', 'snn'),
+            'manage_options',
+            'gumroad-api-uninstall',
+            array($this, 'uninstall_page')
         );
     }
     
@@ -1974,6 +1987,17 @@ class Gumroad_API_WordPress {
     }
     
     /**
+     * Add plugin row meta links
+     */
+    public function add_plugin_row_meta($links, $file) {
+        if (plugin_basename(__FILE__) === $file) {
+            $uninstall_url = admin_url('admin.php?page=gumroad-api-uninstall');
+            $links[] = '<a href="' . esc_url($uninstall_url) . '" style="color: #d63638; font-weight: bold;">' . __('Uninstall', 'snn') . '</a>';
+        }
+        return $links;
+    }
+    
+    /**
      * Users page - Display all users created by Gumroad API
      */
     public function users_page() {
@@ -2302,6 +2326,269 @@ class Gumroad_API_WordPress {
         }
         </script>
         <?php
+    }
+    
+    /**
+     * Uninstall page - Show data to be deleted and uninstall button
+     */
+    public function uninstall_page() {
+        // Get statistics about data to be deleted
+        $data_stats = $this->get_uninstall_data_statistics();
+        
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Uninstall Gumroad API Plugin', 'snn'); ?></h1>
+            
+            <div class="snn-gumroad-section">
+                <h2 style="color: #d63638;"><?php _e('⚠️ WARNING: Complete Data Removal', 'snn'); ?></h2>
+                <div style="background: #fee; border-left: 4px solid #d63638; padding: 15px; margin: 20px 0;">
+                    <p><strong><?php _e('This action will PERMANENTLY DELETE all plugin data from your WordPress database!', 'snn'); ?></strong></p>
+                    <p><?php _e('This action cannot be undone. Please make sure you have a backup before proceeding.', 'snn'); ?></p>
+                </div>
+                
+                <h3><?php _e('The following data will be PERMANENTLY DELETED:', 'snn'); ?></h3>
+                
+                <div style="background: #f9f9f9; border: 1px solid #ddd; padding: 20px; margin: 20px 0;">
+                    <h4><?php _e('Plugin Settings & Data', 'snn'); ?></h4>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><strong><?php _e('Main Plugin Settings:', 'snn'); ?></strong> gumroad_api_settings</li>
+                        <li><strong><?php _e('Activity Logs:', 'snn'); ?></strong> <?php echo number_format($data_stats['logs_count']); ?> entries</li>
+                        <li><strong><?php _e('Processed Sales List:', 'snn'); ?></strong> <?php echo number_format($data_stats['processed_sales_count']); ?> sale IDs</li>
+                        <li><strong><?php _e('Scheduled Cron Jobs:', 'snn'); ?></strong> gumroad_api_check_sales</li>
+                    </ul>
+                    
+                    <h4><?php _e('User Metadata (from Gumroad users)', 'snn'); ?></h4>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><strong><?php _e('Total affected users:', 'snn'); ?></strong> <?php echo number_format($data_stats['gumroad_users_count']); ?></li>
+                        <li><?php _e('gumroad_sale_id - Original sale ID', 'snn'); ?></li>
+                        <li><?php _e('gumroad_product_name - Purchased product name', 'snn'); ?></li>
+                        <li><?php _e('gumroad_product_id - Product ID', 'snn'); ?></li>
+                        <li><?php _e('gumroad_created_date - User creation date', 'snn'); ?></li>
+                        <li><?php _e('gumroad_sale_data - Raw sale data JSON', 'snn'); ?></li>
+                        <li><?php _e('gumroad_assigned_roles - Roles assigned by plugin', 'snn'); ?></li>
+                        <li><?php _e('gumroad_email_sent - Email sent status', 'snn'); ?></li>
+                        <li><?php _e('gumroad_email_sent_date - Email sent timestamp', 'snn'); ?></li>
+                        <li><?php _e('gumroad_last_purchase_date - Last purchase date', 'snn'); ?></li>
+                        <li><?php _e('gumroad_last_product_name - Last purchased product', 'snn'); ?></li>
+                        <li><?php _e('gumroad_last_product_id - Last product ID', 'snn'); ?></li>
+                        <li><?php _e('gumroad_last_sale_id - Last sale ID', 'snn'); ?></li>
+                        <li><?php _e('gumroad_purchase_history - Purchase history JSON', 'snn'); ?></li>
+                        <li><?php _e('gumroad_refunded - Refund status', 'snn'); ?></li>
+                        <li><?php _e('gumroad_refunded_date - Refund date', 'snn'); ?></li>
+                        <li><?php _e('gumroad_subscription_status - Subscription status', 'snn'); ?></li>
+                        <li><?php _e('gumroad_subscription_ended_date - Subscription end date', 'snn'); ?></li>
+                    </ul>
+                    
+                    <p style="margin-top: 15px;"><strong><?php _e('Note:', 'snn'); ?></strong> <?php _e('WordPress user accounts will NOT be deleted, only the Gumroad metadata will be removed.', 'snn'); ?></p>
+                </div>
+                
+                <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                    <h4><?php _e('Before proceeding:', 'snn'); ?></h4>
+                    <ul>
+                        <li>✓ <?php _e('Make sure you have a complete backup of your database', 'snn'); ?></li>
+                        <li>✓ <?php _e('Understand that this action cannot be undone', 'snn'); ?></li>
+                        <li>✓ <?php _e('The plugin will be automatically deactivated after data deletion', 'snn'); ?></li>
+                    </ul>
+                </div>
+                
+                <div style="margin-top: 30px; text-align: center; padding: 20px; background: #f8f8f8; border: 1px solid #ddd;">
+                    <h3 style="color: #d63638; margin: 0 0 20px 0;"><?php _e('Are you absolutely sure?', 'snn'); ?></h3>
+                    <p><?php _e('Type "DELETE ALL DATA" in the box below and click the uninstall button:', 'snn'); ?></p>
+                    <input type="text" id="confirmation-text" placeholder="<?php _e('Type DELETE ALL DATA', 'snn'); ?>" style="padding: 10px; font-size: 16px; width: 300px; margin: 10px;" />
+                    <br><br>
+                    <button type="button" id="uninstall-button" class="button" style="background: #d63638; color: white; font-size: 18px; padding: 15px 30px; border: none; cursor: pointer;" onclick="confirmUninstall()" disabled><?php _e('🗑️ UNINSTALL PLUGIN & DELETE ALL DATA', 'snn'); ?></button>
+                    <div id="uninstall-result" style="margin-top: 20px;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+        // Enable/disable uninstall button based on confirmation text
+        document.getElementById('confirmation-text').addEventListener('input', function() {
+            var button = document.getElementById('uninstall-button');
+            if (this.value === 'DELETE ALL DATA') {
+                button.disabled = false;
+                button.style.background = '#d63638';
+            } else {
+                button.disabled = true;
+                button.style.background = '#ccc';
+            }
+        });
+        
+        function confirmUninstall() {
+            var confirmText = document.getElementById('confirmation-text').value;
+            var resultDiv = document.getElementById('uninstall-result');
+            
+            if (confirmText !== 'DELETE ALL DATA') {
+                alert('<?php _e('Please type "DELETE ALL DATA" exactly as shown.', 'snn'); ?>');
+                return;
+            }
+            
+            if (!confirm('<?php _e('FINAL WARNING: This will permanently delete all Gumroad API plugin data and deactivate the plugin. This action cannot be undone!\\n\\nAre you absolutely sure you want to proceed?', 'snn'); ?>')) {
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p><span class=\"spinner is-active\"></span> <?php _e('Deleting all plugin data...', 'snn'); ?></p>';
+            document.getElementById('uninstall-button').disabled = true;
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'gumroad_uninstall_plugin',
+                    confirmation: confirmText,
+                    nonce: '<?php echo wp_create_nonce('gumroad_uninstall'); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        resultDiv.innerHTML = '<div style=\"background: #d1edff; border-left: 4px solid #0073aa; padding: 15px;\"><h3 style=\"color: #0073aa;\">✓ Uninstall Completed Successfully!</h3><p>' + response.data.message + '</p><p><strong><?php _e('The page will redirect to the plugins page in 3 seconds...', 'snn'); ?></strong></p></div>';
+                        setTimeout(function() {
+                            window.location.href = '<?php echo admin_url('plugins.php'); ?>';
+                        }, 3000);
+                    } else {
+                        resultDiv.innerHTML = '<div style=\"background: #fee; border-left: 4px solid #d63638; padding: 15px;\"><h3 style=\"color: #d63638;\">✗ Uninstall Failed</h3><p>' + response.data.message + '</p></div>';
+                        document.getElementById('uninstall-button').disabled = false;
+                    }
+                },
+                error: function() {
+                    resultDiv.innerHTML = '<div style=\"background: #fee; border-left: 4px solid #d63638; padding: 15px;\"><h3 style=\"color: #d63638;\">✗ Uninstall Failed</h3><p><?php _e('An unexpected error occurred. Please try again.', 'snn'); ?></p></div>';
+                    document.getElementById('uninstall-button').disabled = false;
+                }
+            });
+        }
+        </script>
+        <?php
+    }
+    
+    /**
+     * Get statistics about data to be deleted
+     */
+    private function get_uninstall_data_statistics() {
+        $stats = array(
+            'logs_count' => 0,
+            'processed_sales_count' => 0,
+            'gumroad_users_count' => 0
+        );
+        
+        // Count logs
+        $logs = get_option($this->log_option_name, array());
+        $stats['logs_count'] = count($logs);
+        
+        // Count processed sales
+        $processed_sales = get_option('gumroad_processed_sales', array());
+        $stats['processed_sales_count'] = count($processed_sales);
+        
+        // Count users with Gumroad metadata
+        $user_query = new WP_User_Query(array(
+            'meta_key' => 'gumroad_sale_id',
+            'meta_compare' => 'EXISTS',
+            'fields' => 'ID'
+        ));
+        $stats['gumroad_users_count'] = $user_query->get_total();
+        
+        return $stats;
+    }
+    
+    /**
+     * AJAX handler for plugin uninstall
+     */
+    public function uninstall_plugin_data() {
+        check_ajax_referer('gumroad_uninstall', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'snn')));
+        }
+        
+        $confirmation = isset($_POST['confirmation']) ? sanitize_text_field($_POST['confirmation']) : '';
+        
+        if ($confirmation !== 'DELETE ALL DATA') {
+            wp_send_json_error(array('message' => __('Invalid confirmation text.', 'snn')));
+        }
+        
+        try {
+            $deleted_data = $this->delete_all_plugin_data();
+            
+            // Deactivate the plugin
+            deactivate_plugins(plugin_basename(__FILE__));
+            
+            wp_send_json_success(array(
+                'message' => sprintf(
+                    __('Successfully deleted all plugin data: %s. Plugin has been deactivated.', 'snn'),
+                    implode(', ', $deleted_data)
+                )
+            ));
+        } catch (Exception $e) {
+            wp_send_json_error(array('message' => sprintf(__('Error during uninstall: %s', 'snn'), $e->getMessage())));
+        }
+    }
+    
+    /**
+     * Delete all plugin data
+     */
+    private function delete_all_plugin_data() {
+        global $wpdb;
+        $deleted_data = array();
+        
+        // 1. Delete WordPress options
+        if (delete_option($this->option_name)) {
+            $deleted_data[] = __('Plugin Settings', 'snn');
+        }
+        
+        if (delete_option($this->log_option_name)) {
+            $deleted_data[] = __('Activity Logs', 'snn');
+        }
+        
+        if (delete_option('gumroad_processed_sales')) {
+            $deleted_data[] = __('Processed Sales List', 'snn');
+        }
+        
+        // 2. Remove scheduled cron jobs
+        $timestamp = wp_next_scheduled('gumroad_api_check_sales');
+        if ($timestamp) {
+            wp_unschedule_event($timestamp, 'gumroad_api_check_sales');
+            $deleted_data[] = __('Cron Jobs', 'snn');
+        }
+        
+        // 3. Delete all user meta data with Gumroad prefix
+        $gumroad_meta_keys = array(
+            'gumroad_sale_id',
+            'gumroad_product_name',
+            'gumroad_product_id',
+            'gumroad_created_date',
+            'gumroad_sale_data',
+            'gumroad_assigned_roles',
+            'gumroad_email_sent',
+            'gumroad_email_sent_date',
+            'gumroad_last_purchase_date',
+            'gumroad_last_product_name',
+            'gumroad_last_product_id',
+            'gumroad_last_sale_id',
+            'gumroad_purchase_history',
+            'gumroad_refunded',
+            'gumroad_refunded_date',
+            'gumroad_subscription_status',
+            'gumroad_subscription_ended_date'
+        );
+        
+        $total_meta_deleted = 0;
+        foreach ($gumroad_meta_keys as $meta_key) {
+            $result = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s",
+                $meta_key
+            ));
+            if ($result !== false) {
+                $total_meta_deleted += $result;
+            }
+        }
+        
+        if ($total_meta_deleted > 0) {
+            $deleted_data[] = sprintf(__('%d User Metadata Entries', 'snn'), $total_meta_deleted);
+        }
+        
+        // 4. Clean up any remaining Gumroad-related options (catch-all)
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'gumroad_%'");
+        
+        return $deleted_data;
     }
 }
 
