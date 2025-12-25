@@ -52,6 +52,7 @@ class Gumroad_API_WordPress {
             'auto_create_users' => false,
             'default_roles' => array('subscriber'),
             'product_roles' => array(),
+            'products' => array(),
             'cron_interval' => 120,
             'sales_limit' => 50,
             'send_welcome_email' => true,
@@ -721,6 +722,14 @@ class Gumroad_API_WordPress {
                 return;
             }
             
+            // Add hidden input with products data for persistence
+            jQuery('#products-data-input').remove();
+            jQuery('<input type="hidden" id="products-data-input" name="products_data" value="' + escapeHtml(JSON.stringify(products)) + '" />').insertAfter('#products-tbody');
+            
+            // Show save reminder
+            jQuery('#save-products-reminder').remove();
+            jQuery('<div id="save-products-reminder" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0;"><p><strong>⚠️ Products loaded successfully!</strong> Please scroll down and click <strong>"Save Changes"</strong> to persist these products.</p></div>').insertBefore('#products-list');
+            
             var savedProductRoles = <?php echo json_encode($product_roles); ?>;
             
             products.forEach(function(product) {
@@ -771,18 +780,30 @@ class Gumroad_API_WordPress {
                 $($(this).attr('href')).show();
             });
             
-            // Load products on page load if token exists
-            var token = $('#access_token').val();
-            if (token && token.length > 0) {
-                // Check if we're on the roles tab, if so, try to load products
-                setTimeout(function() {
-                    var savedProducts = <?php echo json_encode(array_keys($product_roles)); ?>;
-                    if (savedProducts.length > 0) {
-                        $('#products-notice').hide();
-                        $('#products-list').show();
-                    }
-                }, 100);
+            // Load products from saved settings on page load
+            var savedProducts = <?php echo json_encode(isset($settings['products']) ? $settings['products'] : array()); ?>;
+            
+            if (savedProducts && savedProducts.length > 0) {
+                // Products exist in database, display them immediately
+                gumroadProducts = savedProducts;
+                displayProducts(savedProducts);
+                $('#products-notice').hide();
+                $('#products-list').show();
+            } else {
+                // No products saved, check if token exists to show helpful message
+                var token = $('#access_token').val();
+                if (token && token.length > 0) {
+                    $('#products-notice').html('<p><strong>👉 Products not loaded yet.</strong></p><p>Go to the "Connection" tab and click <strong>"Test & Fetch Products"</strong> to load your Gumroad products.</p>');
+                }
             }
+            
+            // When switching to roles tab, ensure products are visible if they exist
+            $('.nav-tab').click(function(e) {
+                if ($(this).attr('href') === '#tab-roles' && gumroadProducts.length > 0) {
+                    $('#products-notice').hide();
+                    $('#products-list').show();
+                }
+            });
         });
         </script>
         
@@ -810,6 +831,9 @@ class Gumroad_API_WordPress {
      * Save settings
      */
     private function save_settings($post_data) {
+        // Get existing settings to preserve products if not updated
+        $existing_settings = get_option($this->option_name, array());
+        
         $settings = array(
             'access_token' => isset($post_data['access_token']) ? sanitize_text_field($post_data['access_token']) : '',
             'auto_create_users' => isset($post_data['auto_create_users']) ? true : false,
@@ -820,7 +844,8 @@ class Gumroad_API_WordPress {
             'email_subject' => isset($post_data['email_subject']) ? sanitize_text_field($post_data['email_subject']) : '',
             'email_template' => isset($post_data['email_template']) ? wp_kses_post($post_data['email_template']) : '',
             'log_limit' => isset($post_data['log_limit']) ? intval($post_data['log_limit']) : 500,
-            'product_roles' => array()
+            'product_roles' => array(),
+            'products' => isset($existing_settings['products']) ? $existing_settings['products'] : array()
         );
         
         // Process product roles
@@ -829,6 +854,15 @@ class Gumroad_API_WordPress {
                 if (is_array($roles) && !empty($roles)) {
                     $settings['product_roles'][sanitize_text_field($product_id)] = array_map('sanitize_text_field', $roles);
                 }
+            }
+        }
+        
+        // Process products data
+        if (isset($post_data['products_data'])) {
+            $products_json = stripslashes($post_data['products_data']);
+            $products = json_decode($products_json, true);
+            if (is_array($products)) {
+                $settings['products'] = $products;
             }
         }
         
