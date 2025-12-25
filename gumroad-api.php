@@ -58,7 +58,8 @@ class Gumroad_API_WordPress {
             'send_welcome_email' => true,
             'email_subject' => 'Welcome to {{site_name}}!',
             'email_template' => $this->get_default_email_template(),
-            'log_limit' => 500
+            'log_limit' => 500,
+            'user_list_per_page' => 20
         );
         
         if (!get_option($this->option_name)) {
@@ -137,6 +138,15 @@ class Gumroad_API_WordPress {
             'gumroad-api-logs',
             array($this, 'logs_page')
         );
+        
+        add_submenu_page(
+            'gumroad-api',
+            __('User List', 'snn'),
+            __('User List', 'snn'),
+            'manage_options',
+            'gumroad-api-users',
+            array($this, 'users_page')
+        );
     }
     
     /**
@@ -182,8 +192,30 @@ class Gumroad_API_WordPress {
             
             foreach (array_slice($data['sales'], 0, $sales_limit) as $sale) {
                 $sale_id = isset($sale['id']) ? $sale['id'] : '';
+                $email = isset($sale['email']) ? sanitize_email($sale['email']) : '';
                 
-                if (!in_array($sale_id, $processed_sales)) {
+                // Check if sale was processed AND user still exists
+                $should_process = true;
+                if (in_array($sale_id, $processed_sales)) {
+                    // Sale was processed before, but check if user still exists
+                    if (!empty($email)) {
+                        $user = get_user_by('email', $email);
+                        if ($user && get_user_meta($user->ID, 'gumroad_sale_id', true) === $sale_id) {
+                            // User exists and matches this sale, skip processing
+                            $should_process = false;
+                        } else {
+                            // User was deleted or doesn't match, remove from processed and re-process
+                            $processed_sales = array_diff($processed_sales, array($sale_id));
+                            $this->log_activity('Sale re-processed', array(
+                                'reason' => 'User no longer exists',
+                                'sale_id' => $sale_id,
+                                'email' => $email
+                            ));
+                        }
+                    }
+                }
+                
+                if ($should_process) {
                     $result = $this->process_sale($sale);
                     
                     if (!is_wp_error($result)) {
@@ -276,16 +308,32 @@ class Gumroad_API_WordPress {
                 $user->add_role($roles[$i]); // Add additional roles
             }
             
+            // Store Gumroad metadata
+            $sale_id = isset($sale_data['id']) ? $sale_data['id'] : '';
+            update_user_meta($user_id, 'gumroad_sale_id', $sale_id);
+            update_user_meta($user_id, 'gumroad_product_name', $product_name);
+            update_user_meta($user_id, 'gumroad_product_id', $product_id);
+            update_user_meta($user_id, 'gumroad_created_date', current_time('mysql'));
+            update_user_meta($user_id, 'gumroad_sale_data', json_encode($sale_data));
+            update_user_meta($user_id, 'gumroad_assigned_roles', json_encode($roles));
+            
             // Send welcome email
+            $email_sent = false;
             if (isset($settings['send_welcome_email']) && $settings['send_welcome_email']) {
-                $this->send_welcome_email($user, $password, $product_name);
+                $email_sent = $this->send_welcome_email($user, $password, $product_name);
             }
+            
+            update_user_meta($user_id, 'gumroad_email_sent', $email_sent ? 'yes' : 'no');
+            update_user_meta($user_id, 'gumroad_email_sent_date', $email_sent ? current_time('mysql') : '');
             
             $this->log_activity('User created', array(
                 'user_id' => $user_id,
                 'email' => $email,
                 'product' => $product_name,
-                'roles' => $roles
+                'product_id' => $product_id,
+                'sale_id' => $sale_id,
+                'roles' => $roles,
+                'email_sent' => $email_sent
             ));
             
             return $user_id;
@@ -300,10 +348,35 @@ class Gumroad_API_WordPress {
             }
             
             if (!empty($roles_added)) {
+                // Update Gumroad metadata for existing user
+                $sale_id = isset($sale_data['id']) ? $sale_data['id'] : '';
+                update_user_meta($user->ID, 'gumroad_last_purchase_date', current_time('mysql'));
+                update_user_meta($user->ID, 'gumroad_last_product_name', $product_name);
+                update_user_meta($user->ID, 'gumroad_last_product_id', $product_id);
+                update_user_meta($user->ID, 'gumroad_last_sale_id', $sale_id);
+                
+                // Append to purchase history
+                $purchase_history = get_user_meta($user->ID, 'gumroad_purchase_history', true);
+                if (!$purchase_history) {
+                    $purchase_history = array();
+                } else {
+                    $purchase_history = json_decode($purchase_history, true);
+                }
+                $purchase_history[] = array(
+                    'date' => current_time('mysql'),
+                    'product_name' => $product_name,
+                    'product_id' => $product_id,
+                    'sale_id' => $sale_id,
+                    'roles_added' => $roles_added
+                );
+                update_user_meta($user->ID, 'gumroad_purchase_history', json_encode($purchase_history));
+                
                 $this->log_activity('User roles updated', array(
                     'user_id' => $user->ID,
                     'email' => $email,
                     'product' => $product_name,
+                    'product_id' => $product_id,
+                    'sale_id' => $sale_id,
                     'roles_added' => $roles_added
                 ));
             }
@@ -357,7 +430,7 @@ class Gumroad_API_WordPress {
         
         $headers = array('Content-Type: text/html; charset=UTF-8');
         
-        wp_mail($user->user_email, $subject, $message, $headers);
+        return wp_mail($user->user_email, $subject, $message, $headers);
     }
     
     /**
@@ -824,6 +897,7 @@ class Gumroad_API_WordPress {
             'email_subject' => isset($post_data['email_subject']) ? sanitize_text_field($post_data['email_subject']) : '',
             'email_template' => isset($post_data['email_template']) ? wp_kses_post($post_data['email_template']) : '',
             'log_limit' => isset($post_data['log_limit']) ? intval($post_data['log_limit']) : 500,
+            'user_list_per_page' => isset($post_data['user_list_per_page']) ? intval($post_data['user_list_per_page']) : 20,
             'product_roles' => array(),
             'products' => isset($existing_settings['products']) ? $existing_settings['products'] : array()
         );
@@ -1060,6 +1134,264 @@ class Gumroad_API_WordPress {
         
         update_option($this->log_option_name, array());
         wp_send_json_success();
+    }
+    
+    /**
+     * Users page - Display all users created by Gumroad API
+     */
+    public function users_page() {
+        // Handle form submission for per page setting
+        if (isset($_POST['gumroad_user_list_settings_nonce']) && wp_verify_nonce($_POST['gumroad_user_list_settings_nonce'], 'gumroad_save_user_list_settings')) {
+            $settings = get_option($this->option_name);
+            $settings['user_list_per_page'] = isset($_POST['user_list_per_page']) ? max(1, intval($_POST['user_list_per_page'])) : 20;
+            update_option($this->option_name, $settings);
+            echo '<div class="notice notice-success"><p>' . __('Settings saved successfully!', 'snn') . '</p></div>';
+        }
+        
+        $settings = get_option($this->option_name);
+        $per_page = isset($settings['user_list_per_page']) ? intval($settings['user_list_per_page']) : 20;
+        $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        
+        // Query users with Gumroad metadata
+        $args = array(
+            'meta_key' => 'gumroad_sale_id',
+            'meta_compare' => 'EXISTS',
+            'number' => $per_page,
+            'paged' => $page,
+            'orderby' => 'registered',
+            'order' => 'DESC'
+        );
+        
+        $user_query = new WP_User_Query($args);
+        $users = $user_query->get_results();
+        $total_users = $user_query->get_total();
+        $total_pages = ceil($total_users / $per_page);
+        
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Gumroad Users', 'snn'); ?></h1>
+            
+            <!-- Per Page Settings Section -->
+            <div class="gumroad-section" style="padding: 15px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px;">
+                <form method="post" action="" style="display: flex; align-items: center; gap: 15px;">
+                    <?php wp_nonce_field('gumroad_save_user_list_settings', 'gumroad_user_list_settings_nonce'); ?>
+                    <label for="user_list_per_page"><strong><?php _e('Users per page:', 'snn'); ?></strong></label>
+                    <input type="number" name="user_list_per_page" id="user_list_per_page" value="<?php echo esc_attr($per_page); ?>" class="small-text" min="1" max="100" />
+                    <?php submit_button(__('Save', 'snn'), 'primary', 'submit', false); ?>
+                    <span style="margin-left: auto; color: #666;"><?php printf(__('Total: %d users', 'snn'), $total_users); ?></span>
+                </form>
+            </div>
+            
+            <?php if (empty($users)): ?>
+                <div style="background: white; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; text-align: center;">
+                    <p><?php _e('No users found. Users created through Gumroad purchases will appear here.', 'snn'); ?></p>
+                </div>
+            <?php else: ?>
+                <div id="users-container">
+                    <?php foreach ($users as $index => $user): 
+                        $sale_id = get_user_meta($user->ID, 'gumroad_sale_id', true);
+                        $product_name = get_user_meta($user->ID, 'gumroad_product_name', true);
+                        $product_id = get_user_meta($user->ID, 'gumroad_product_id', true);
+                        $created_date = get_user_meta($user->ID, 'gumroad_created_date', true);
+                        $email_sent = get_user_meta($user->ID, 'gumroad_email_sent', true);
+                        $email_sent_date = get_user_meta($user->ID, 'gumroad_email_sent_date', true);
+                        $sale_data = get_user_meta($user->ID, 'gumroad_sale_data', true);
+                        $assigned_roles = get_user_meta($user->ID, 'gumroad_assigned_roles', true);
+                        $last_purchase_date = get_user_meta($user->ID, 'gumroad_last_purchase_date', true);
+                        $purchase_history = get_user_meta($user->ID, 'gumroad_purchase_history', true);
+                        
+                        $user_data = get_userdata($user->ID);
+                        $registered_date = $user_data->user_registered;
+                        $roles = $user_data->roles;
+                        
+                        // Email preview (first 50 chars)
+                        $email_preview = strlen($user->user_email) > 30 ? substr($user->user_email, 0, 30) . '...' : $user->user_email;
+                    ?>
+                        <div class="user-entry" style="background: white; padding: 15px; margin-bottom: 10px; border: 1px solid #ccd0d4; border-radius: 4px;">
+                            <div class="user-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 15px;" onclick="toggleUser(<?php echo $user->ID; ?>)">
+                                <div style="flex: 1; display: flex; align-items: center; gap: 15px;">
+                                    <span class="dashicons dashicons-arrow-right" id="icon-<?php echo $user->ID; ?>" style="color: #2271b1;"></span>
+                                    <div style="flex: 1;">
+                                        <strong style="font-size: 14px;"><?php echo esc_html($user->user_login); ?></strong>
+                                        <span style="color: #666; margin-left: 10px; font-size: 13px;"><?php echo esc_html($email_preview); ?></span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center; font-size: 12px; color: #666;">
+                                    <span><strong><?php _e('Product:', 'snn'); ?></strong> <?php echo esc_html($product_name ? $product_name : 'N/A'); ?></span>
+                                    <span><strong><?php _e('Created:', 'snn'); ?></strong> <?php echo esc_html($created_date ? $created_date : $registered_date); ?></span>
+                                    <?php if ($email_sent === 'yes'): ?>
+                                        <span style="color: green;">✓ <?php _e('Email Sent', 'snn'); ?></span>
+                                    <?php else: ?>
+                                        <span style="color: #999;">✗ <?php _e('No Email', 'snn'); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div class="user-details" id="user-<?php echo $user->ID; ?>" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                    <!-- Left Column -->
+                                    <div>
+                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('User Information', 'snn'); ?></h3>
+                                        <table class="widefat" style="font-size: 13px;">
+                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('User ID', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->ID); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Username', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->user_login); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Email', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->user_email); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Registered', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($registered_date); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Current Roles', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html(implode(', ', $roles)); ?></td></tr>
+                                        </table>
+                                        
+                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Gumroad Information', 'snn'); ?></h3>
+                                        <table class="widefat" style="font-size: 13px;">
+                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Sale ID', 'snn'); ?></th><td style="padding: 8px;"><code><?php echo esc_html($sale_id ? $sale_id : 'N/A'); ?></code></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product Name', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($product_name ? $product_name : 'N/A'); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product ID', 'snn'); ?></th><td style="padding: 8px;"><code><?php echo esc_html($product_id ? $product_id : 'N/A'); ?></code></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Created Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($created_date ? $created_date : 'N/A'); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Assigned Roles', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($assigned_roles ? implode(', ', json_decode($assigned_roles, true)) : 'N/A'); ?></td></tr>
+                                        </table>
+                                        
+                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Email Status', 'snn'); ?></h3>
+                                        <table class="widefat" style="font-size: 13px;">
+                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Email Sent', 'snn'); ?></th><td style="padding: 8px;"><?php echo $email_sent === 'yes' ? '<span style="color: green;">✓ Yes</span>' : '<span style="color: #999;">✗ No</span>'; ?></td></tr>
+                                            <?php if ($email_sent === 'yes'): ?>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Email Sent Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($email_sent_date); ?></td></tr>
+                                            <?php endif; ?>
+                                        </table>
+                                    </div>
+                                    
+                                    <!-- Right Column -->
+                                    <div>
+                                        <?php if ($last_purchase_date): ?>
+                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('Last Purchase', 'snn'); ?></h3>
+                                        <table class="widefat" style="font-size: 13px; margin-bottom: 20px;">
+                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($last_purchase_date); ?></td></tr>
+                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html(get_user_meta($user->ID, 'gumroad_last_product_name', true)); ?></td></tr>
+                                        </table>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($purchase_history): 
+                                            $history = json_decode($purchase_history, true);
+                                            if (is_array($history) && !empty($history)):
+                                        ?>
+                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('Purchase History', 'snn'); ?></h3>
+                                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+                                            <table class="widefat" style="font-size: 12px;">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Date', 'snn'); ?></th>
+                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Product', 'snn'); ?></th>
+                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Roles Added', 'snn'); ?></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach (array_reverse($history) as $purchase): ?>
+                                                    <tr>
+                                                        <td style="padding: 6px;"><?php echo esc_html($purchase['date']); ?></td>
+                                                        <td style="padding: 6px;"><?php echo esc_html($purchase['product_name']); ?></td>
+                                                        <td style="padding: 6px;"><?php echo esc_html(implode(', ', $purchase['roles_added'])); ?></td>
+                                                    </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <?php endif; endif; ?>
+                                        
+                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Raw Sale Data', 'snn'); ?></h3>
+                                        <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                            <pre style="margin: 0; font-size: 11px; white-space: pre-wrap; word-wrap: break-word;"><?php 
+                                                if ($sale_data) {
+                                                    $decoded_data = json_decode($sale_data, true);
+                                                    echo esc_html(print_r($decoded_data, true));
+                                                } else {
+                                                    echo 'No raw sale data available';
+                                                }
+                                            ?></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; display: flex; gap: 10px;">
+                                    <a href="<?php echo admin_url('user-edit.php?user_id=' . $user->ID); ?>" class="button button-primary" target="_blank"><?php _e('Edit User', 'snn'); ?></a>
+                                    <a href="mailto:<?php echo esc_attr($user->user_email); ?>" class="button"><?php _e('Send Email', 'snn'); ?></a>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <?php if ($total_pages > 1): ?>
+                    <div class="tablenav bottom" style="padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px; margin-top: 10px;">
+                        <div class="tablenav-pages">
+                            <?php
+                            echo paginate_links(array(
+                                'base' => add_query_arg('paged', '%#%'),
+                                'format' => '',
+                                'prev_text' => __('&laquo; Previous'),
+                                'next_text' => __('Next &raquo;'),
+                                'total' => $total_pages,
+                                'current' => $page,
+                                'type' => 'plain'
+                            ));
+                            ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Save Button at Bottom -->
+                <div style="margin-top: 20px; padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
+                    <form method="post" action="" style="display: flex; align-items: center; gap: 15px;">
+                        <?php wp_nonce_field('gumroad_save_user_list_settings', 'gumroad_user_list_settings_nonce'); ?>
+                        <label for="user_list_per_page_bottom"><strong><?php _e('Users per page:', 'snn'); ?></strong></label>
+                        <input type="number" name="user_list_per_page" id="user_list_per_page_bottom" value="<?php echo esc_attr($per_page); ?>" class="small-text" min="1" max="100" />
+                        <?php submit_button(__('Save', 'snn'), 'primary', 'submit', false); ?>
+                    </form>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <script>
+        function toggleUser(userId) {
+            var details = document.getElementById('user-' + userId);
+            var icon = document.getElementById('icon-' + userId);
+            if (details.style.display === 'none') {
+                details.style.display = 'block';
+                icon.classList.remove('dashicons-arrow-right');
+                icon.classList.add('dashicons-arrow-down');
+            } else {
+                details.style.display = 'none';
+                icon.classList.remove('dashicons-arrow-down');
+                icon.classList.add('dashicons-arrow-right');
+            }
+        }
+        </script>
+        
+        <style>
+        .user-entry:hover {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: box-shadow 0.2s;
+        }
+        .user-header:hover {
+            background: #f9f9f9;
+        }
+        .tablenav-pages {
+            text-align: center;
+        }
+        .tablenav-pages .page-numbers {
+            padding: 5px 10px;
+            margin: 0 2px;
+            border: 1px solid #ccd0d4;
+            background: white;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .tablenav-pages .page-numbers.current {
+            background: #2271b1;
+            color: white;
+            border-color: #2271b1;
+        }
+        .tablenav-pages .page-numbers:hover:not(.current) {
+            background: #f0f0f1;
+        }
+        </style>
+        <?php
     }
 }
 
