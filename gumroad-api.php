@@ -2,8 +2,8 @@
 /** 
  * Plugin Name: Gumroad API WordPress
  * Plugin URI: https://github.com/sinanisler/gumroad-api-wordpress
- * Description: Connect your WordPress site with Gumroad to automatically create user accounts when customers make a purchase.
- * Version: 0.3
+ * Description: Connect your WordPress site with Gumroad API to automatically create user accounts when customers make a purchase. Uses scheduled API polling to monitor sales.
+ * Version: 0.4
  * Author: sinanisler
  * Author URI: https://sinanisler.com
  * License: GPL v2 or later
@@ -28,10 +28,7 @@ class Gumroad_API_WordPress {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         
-        // REST API endpoint for webhooks
-        add_action('rest_api_init', array($this, 'register_webhook_endpoint'));
-        
-        // Cron job
+        // Cron job for API-based sales fetching
         add_action('gumroad_api_check_sales', array($this, 'check_recent_sales'));
         add_filter('cron_schedules', array($this, 'add_custom_cron_interval'));
         
@@ -149,37 +146,7 @@ class Gumroad_API_WordPress {
     }
     
     /**
-     * Register webhook endpoint
-     */
-    public function register_webhook_endpoint() {
-        register_rest_route('gumroad-api/v1', '/webhook', array(
-            'methods' => 'POST',
-            'callback' => array($this, 'handle_webhook'),
-            'permission_callback' => '__return_true'
-        ));
-    }
-    
-    /**
-     * Handle webhook from Gumroad
-     */
-    public function handle_webhook($request) {
-        $params = $request->get_params();
-        
-        $this->log_activity('Webhook received', $params);
-        
-        // Process the sale
-        $result = $this->process_sale($params);
-        
-        if (is_wp_error($result)) {
-            $this->log_activity('Webhook error', array('error' => $result->get_error_message()));
-            return new WP_REST_Response(array('success' => false, 'message' => $result->get_error_message()), 400);
-        }
-        
-        return new WP_REST_Response(array('success' => true, 'user_id' => $result), 200);
-    }
-    
-    /**
-     * Check recent sales via API
+     * Check recent sales via API (cron job)
      */
     public function check_recent_sales() {
         $settings = get_option($this->option_name);
@@ -480,7 +447,6 @@ class Gumroad_API_WordPress {
         }
         
         $settings = get_option($this->option_name);
-        $webhook_url = rest_url('gumroad-api/v1/webhook');
         $auto_create_users = isset($settings['auto_create_users']) ? $settings['auto_create_users'] : false;
         $default_roles = isset($settings['default_roles']) ? $settings['default_roles'] : array('subscriber');
         $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
@@ -502,15 +468,11 @@ class Gumroad_API_WordPress {
                 <!-- Connection Tab -->
                 <div id="tab-connection" class="tab-content" style="display:block;">
                     <h2><?php _e('API Connection', 'snn'); ?></h2>
+                    <p class="description" style="background: #e7f5ff; padding: 15px; border-left: 4px solid #2271b1;">
+                        <strong>ℹ️ <?php _e('API-Based Sales Monitoring', 'snn'); ?></strong><br>
+                        <?php _e('This plugin uses Gumroad API to automatically check for new sales. Configure the check interval in the "Cron Settings" tab.', 'snn'); ?>
+                    </p>
                     <table class="form-table">
-                        <tr>
-                            <th scope="row"><?php _e('Webhook URL', 'snn'); ?></th>
-                            <td>
-                                <input type="text" value="<?php echo esc_url($webhook_url); ?>" readonly class="regular-text" id="webhook-url" />
-                                <button type="button" class="button" onclick="copyWebhookUrl()"><?php _e('Copy', 'snn'); ?></button>
-                                <p class="description"><?php _e('Copy this URL and add it to your Gumroad product settings under "Ping"', 'snn'); ?></p>
-                            </td>
-                        </tr>
                         <tr>
                             <th scope="row"><label for="access_token"><?php _e('Gumroad Access Token', 'snn'); ?></label></th>
                             <td>
@@ -680,14 +642,6 @@ class Gumroad_API_WordPress {
         
         <script>
         var gumroadProducts = [];
-        
-        function copyWebhookUrl() {
-            var copyText = document.getElementById("webhook-url");
-            copyText.select();
-            copyText.setSelectionRange(0, 99999);
-            document.execCommand("copy");
-            alert("<?php _e('Webhook URL copied to clipboard!', 'snn'); ?>");
-        }
         
         function togglePassword(id) {
             var input = document.getElementById(id);
