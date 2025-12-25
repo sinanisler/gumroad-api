@@ -620,13 +620,6 @@ class Gumroad_API_WordPress {
                                 <p class="description"><?php _e('Number of recent sales to check each time (default: 50)', 'snn'); ?></p>
                             </td>
                         </tr>
-                        <tr>
-                            <th scope="row"><label for="log_limit"><?php _e('Log Limit', 'snn'); ?></label></th>
-                            <td>
-                                <input type="number" name="log_limit" id="log_limit" value="<?php echo esc_attr($settings['log_limit']); ?>" class="small-text" min="50" />
-                                <p class="description"><?php _e('Maximum number of logs to keep (default: 500)', 'snn'); ?></p>
-                            </td>
-                        </tr>
                     </table>
                 </div>
                 
@@ -938,6 +931,15 @@ class Gumroad_API_WordPress {
      * Logs page
      */
     public function logs_page() {
+        // Handle form submission for log limit
+        if (isset($_POST['gumroad_log_settings_nonce']) && wp_verify_nonce($_POST['gumroad_log_settings_nonce'], 'gumroad_save_log_settings')) {
+            $settings = get_option($this->option_name);
+            $settings['log_limit'] = isset($_POST['log_limit']) ? intval($_POST['log_limit']) : 500;
+            update_option($this->option_name, $settings);
+            echo '<div class="notice notice-success"><p>' . __('Log settings saved successfully!', 'snn') . '</p></div>';
+        }
+        
+        $settings = get_option($this->option_name);
         $logs = get_option($this->log_option_name, array());
         $per_page = 20;
         $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
@@ -949,6 +951,24 @@ class Gumroad_API_WordPress {
         ?>
         <div class="wrap">
             <h1><?php _e('API Logs', 'snn'); ?></h1>
+            
+            <!-- Log Settings Section -->
+            <div class="gumroad-section" style="padding: 20px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px;">
+                <h2 style="margin-top: 0; padding-bottom: 10px; border-bottom: 2px solid #0073aa;"><?php _e('Log Settings', 'snn'); ?></h2>
+                <form method="post" action="">
+                    <?php wp_nonce_field('gumroad_save_log_settings', 'gumroad_log_settings_nonce'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="log_limit"><?php _e('Log Limit', 'snn'); ?></label></th>
+                            <td>
+                                <input type="number" name="log_limit" id="log_limit" value="<?php echo esc_attr($settings['log_limit']); ?>" class="small-text" min="50" />
+                                <p class="description"><?php _e('Maximum number of logs to keep (default: 500)', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button(__('Save Settings', 'snn'), 'primary', 'submit', false); ?>
+                </form>
+            </div>
             
             <div style="margin: 20px 0;">
                 <button type="button" class="button" onclick="if(confirm('Are you sure you want to clear all logs?')) clearLogs();"><?php _e('Clear All Logs', 'snn'); ?></button>
