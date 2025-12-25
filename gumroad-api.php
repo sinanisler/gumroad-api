@@ -662,75 +662,99 @@ class Gumroad_API_WordPress {
         $stats = $this->get_dashboard_statistics();
         
         ?>
+        <style>
+        .snn-gumroad-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px; }
+        .snn-gumroad-stat-card { color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .snn-gumroad-stat-card-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .snn-gumroad-stat-card-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .snn-gumroad-stat-card-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .snn-gumroad-stat-card-4 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .snn-gumroad-stat-card-5 { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .snn-gumroad-stat-card-6 { background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); }
+        .snn-gumroad-stat-card-7 { background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); }
+        .snn-gumroad-stat-card-8 { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; }
+        .snn-gumroad-stat-label { font-size: 14px; opacity: 0.9; margin-bottom: 10px; }
+        .snn-gumroad-stat-value { font-size: 36px; font-weight: bold; }
+        .snn-gumroad-stat-meta { font-size: 12px; opacity: 0.8; margin-top: 10px; }
+        .snn-gumroad-stat-title { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+        .snn-gumroad-stat-count { font-size: 24px; font-weight: bold; }
+        .snn-gumroad-stat-count-blue { font-size: 24px; font-weight: bold; color: #667eea; }
+        .snn-gumroad-stat-meta-small { font-size: 12px; opacity: 0.8; margin-top: 5px; }
+        .snn-gumroad-stat-label-bold { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+        .snn-gumroad-stat-meta-normal { font-size: 12px; margin-top: 10px; }
+        .snn-gumroad-section { margin-top: 30px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px; }
+        .snn-gumroad-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .snn-gumroad-section-title { margin: 0; }
+        </style>
         <div class="wrap">
             <h1><?php _e('Gumroad API Dashboard', 'snn'); ?></h1>
             
             <!-- Statistics Grid -->
-            <div class="gumroad-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px;">
+            <div class="snn-gumroad-stats-grid">
                 
                 <!-- Total Sales Processed -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Total Sales Processed', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_sales']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('All time', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-1">
+                    <div class="snn-gumroad-stat-label"><?php _e('Total Sales Processed', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo number_format($stats['total_sales']); ?></div>
+                    <div class="snn-gumroad-stat-meta"><?php _e('All time', 'snn'); ?></div>
                 </div>
                 
                 <!-- Users Created This Month -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Users Created This Month', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['users_this_month']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php echo date('F Y'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-2">
+                    <div class="snn-gumroad-stat-label"><?php _e('Users Created This Month', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo number_format($stats['users_this_month']); ?></div>
+                    <div class="snn-gumroad-stat-meta"><?php echo date('F Y'); ?></div>
                 </div>
                 
                 <!-- Total Users -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Total Gumroad Users', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_users']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('Active accounts', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-3">
+                    <div class="snn-gumroad-stat-label"><?php _e('Total Gumroad Users', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo number_format($stats['total_users']); ?></div>
+                    <div class="snn-gumroad-stat-meta"><?php _e('Active accounts', 'snn'); ?></div>
                 </div>
                 
                 <!-- Email Success Rate -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Email Success Rate', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo $stats['email_success_rate']; ?>%</div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php echo $stats['emails_sent']; ?> <?php _e('sent', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-4">
+                    <div class="snn-gumroad-stat-label"><?php _e('Email Success Rate', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo $stats['email_success_rate']; ?>%</div>
+                    <div class="snn-gumroad-stat-meta"><?php echo $stats['emails_sent']; ?> <?php _e('sent', 'snn'); ?></div>
                 </div>
                 
                 <!-- Most Popular Product -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Most Popular Product', 'snn'); ?></div>
-                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;"><?php echo esc_html($stats['top_product_name']); ?></div>
-                    <div style="font-size: 24px; font-weight: bold;"><?php echo number_format($stats['top_product_count']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;"><?php _e('purchases', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-5">
+                    <div class="snn-gumroad-stat-label"><?php _e('Most Popular Product', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-title"><?php echo esc_html($stats['top_product_name']); ?></div>
+                    <div class="snn-gumroad-stat-count"><?php echo number_format($stats['top_product_count']); ?></div>
+                    <div class="snn-gumroad-stat-meta-small"><?php _e('purchases', 'snn'); ?></div>
                 </div>
                 
                 <!-- Active Subscriptions -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Active Subscriptions', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['active_subscriptions']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('Currently active', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-6">
+                    <div class="snn-gumroad-stat-label"><?php _e('Active Subscriptions', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo number_format($stats['active_subscriptions']); ?></div>
+                    <div class="snn-gumroad-stat-meta"><?php _e('Currently active', 'snn'); ?></div>
                 </div>
                 
                 <!-- Refunds Processed -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Refunds Processed', 'snn'); ?></div>
-                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_refunds']); ?></div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('All time', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-7">
+                    <div class="snn-gumroad-stat-label"><?php _e('Refunds Processed', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-value"><?php echo number_format($stats['total_refunds']); ?></div>
+                    <div class="snn-gumroad-stat-meta"><?php _e('All time', 'snn'); ?></div>
                 </div>
                 
                 <!-- Recent Activity -->
-                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;"><?php _e('Recent Activity', 'snn'); ?></div>
-                    <div style="font-size: 24px; font-weight: bold; color: #667eea;"><?php echo number_format($stats['activity_last_24h']); ?></div>
-                    <div style="font-size: 12px; margin-top: 10px;"><?php _e('events in last 24 hours', 'snn'); ?></div>
+                <div class="snn-gumroad-stat-card snn-gumroad-stat-card-8">
+                    <div class="snn-gumroad-stat-label-bold"><?php _e('Recent Activity', 'snn'); ?></div>
+                    <div class="snn-gumroad-stat-count-blue"><?php echo number_format($stats['activity_last_24h']); ?></div>
+                    <div class="snn-gumroad-stat-meta-normal"><?php _e('events in last 24 hours', 'snn'); ?></div>
                 </div>
                 
             </div>
             
             <!-- Recent Logs Preview -->
-            <div class="gumroad-section" style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="margin: 0;"><?php _e('Recent Activity Logs', 'snn'); ?></h2>
+            <div class="snn-gumroad-section">
+                <div class="snn-gumroad-section-header">
+                    <h2 class="snn-gumroad-section-title"><?php _e('Recent Activity Logs', 'snn'); ?></h2>
                     <a href="<?php echo admin_url('admin.php?page=gumroad-api-logs'); ?>" class="button"><?php _e('View All Logs', 'snn'); ?></a>
                 </div>
                 
@@ -758,7 +782,7 @@ class Gumroad_API_WordPress {
             
             <!-- Product Statistics -->
             <?php if (!empty($stats['product_breakdown'])): ?>
-            <div class="gumroad-section" style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
+            <div class="snn-gumroad-section">
                 <h2><?php _e('Product Breakdown', 'snn'); ?></h2>
                 <table class="wp-list-table widefat fixed striped">
                     <thead>
@@ -911,6 +935,28 @@ class Gumroad_API_WordPress {
         $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
         
         ?>
+        <style>
+        .snn-gumroad-section { padding: 20px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px; }
+        .snn-gumroad-section h2 { margin-top: 0; padding-bottom: 10px; border-bottom: 2px solid #0073aa; }
+        .snn-gumroad-info-box { background: #e7f5ff; padding: 15px; border-left: 4px solid #2271b1; }
+        .snn-gumroad-warning-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+        .snn-gumroad-reminder-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; }
+        .snn-gumroad-loading-box { display: none; text-align: center; padding: 20px; }
+        .snn-gumroad-products-list { display: none; }
+        .snn-gumroad-th-40 { width: 40%; }
+        .snn-gumroad-th-20 { width: 20%; }
+        .snn-gumroad-th-15 { width: 15%; }
+        .snn-gumroad-th-25 { width: 25%; }
+        .snn-gumroad-description-spacing { margin-top: 15px; }
+        .snn-gumroad-email-help { margin-top: 15px; padding: 15px; background: #f0f0f1; border-left: 4px solid #2271b1; }
+        .snn-gumroad-help-title { margin-top: 0; }
+        .snn-gumroad-help-list { margin: 10px 0; padding-left: 20px; }
+        .product-role-row { margin-bottom: 10px; }
+        .product-roles-checkboxes label { font-weight: normal; }
+        #products-list table { margin-top: 20px; }
+        #products-list th { padding: 10px; background: #f5f5f5; font-weight: 600; }
+        #products-list td { padding: 10px; vertical-align: top; }
+        </style>
         <div class="wrap">
             <h1><?php _e('Gumroad API Settings', 'snn'); ?></h1>
             
@@ -920,7 +966,7 @@ class Gumroad_API_WordPress {
                 <!-- API Connection Section -->
                 <div class="gumroad-section">
                     <h2><?php _e('API Connection', 'snn'); ?></h2>
-                    <p class="description" style="background: #e7f5ff; padding: 15px; border-left: 4px solid #2271b1;">
+                    <p class="description snn-gumroad-info-box">
                         <strong>ℹ️ <?php _e('API-Based Sales Monitoring', 'snn'); ?></strong><br>
                         <?php _e('This plugin uses Gumroad API to automatically check for new sales. Configure the check interval in the "Cron Settings" tab.', 'snn'); ?>
                     </p>
@@ -979,31 +1025,31 @@ class Gumroad_API_WordPress {
                     <h3><?php _e('Product-Specific Role Assignment', 'snn'); ?></h3>
                     <p><?php _e('Configure which roles should be assigned for each product purchase. If no roles are selected for a product, the default "Assign User Roles" setting above will be used.', 'snn'); ?></p>
                     
-                    <div id="products-notice" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                    <div id="products-notice" class="snn-gumroad-warning-box">
                         <p><strong><?php _e('⚠️ Please test your API connection first to load your products.', 'snn'); ?></strong></p>
                         <p><?php _e('Go to the "Connection" tab and click "Test & Fetch Products" button.', 'snn'); ?></p>
                     </div>
                     
-                    <div id="products-loading" style="display: none; text-align: center; padding: 20px;">
+                    <div id="products-loading" class="snn-gumroad-loading-box">
                         <span class="spinner is-active"></span>
                         <p><?php _e('Loading products...', 'snn'); ?></p>
                     </div>
                     
-                    <div id="products-list" style="display: none;">
+                    <div id="products-list" class="snn-gumroad-products-list">
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
-                                    <th style="width: 40%;"><?php _e('Product Name', 'snn'); ?></th>
-                                    <th style="width: 20%;"><?php _e('Product ID', 'snn'); ?></th>
-                                    <th style="width: 15%;"><?php _e('Status', 'snn'); ?></th>
-                                    <th style="width: 25%;"><?php _e('Select roles to assign for this product', 'snn'); ?></th>
+                                    <th class="snn-gumroad-th-40"><?php _e('Product Name', 'snn'); ?></th>
+                                    <th class="snn-gumroad-th-20"><?php _e('Product ID', 'snn'); ?></th>
+                                    <th class="snn-gumroad-th-15"><?php _e('Status', 'snn'); ?></th>
+                                    <th class="snn-gumroad-th-25"><?php _e('Select roles to assign for this product', 'snn'); ?></th>
                                 </tr>
                             </thead>
                             <tbody id="products-tbody">
                                 <!-- Products will be loaded here via AJAX -->
                             </tbody>
                         </table>
-                        <p class="description" style="margin-top: 15px;">
+                        <p class="description snn-gumroad-description-spacing">
                             <strong><?php _e('💡 How it works:', 'snn'); ?></strong><br>
                             • <?php _e('Configure specific roles for each product, or leave unchecked to use default roles (backward compatible)', 'snn'); ?><br>
                             • <?php _e('Only products with assigned roles will trigger user creation', 'snn'); ?><br>
@@ -1035,9 +1081,9 @@ class Gumroad_API_WordPress {
                             <th scope="row"><label for="email_template"><?php _e('Email Template (HTML)', 'snn'); ?></label></th>
                             <td>
                                 <textarea name="email_template" id="email_template" rows="20" class="large-text code"><?php echo esc_textarea($settings['email_template']); ?></textarea>
-                                <div style="margin-top: 15px; padding: 15px; background: #f0f0f1; border-left: 4px solid #2271b1;">
-                                    <h4 style="margin-top: 0;">📧 <?php _e('Available Dynamic Tags:', 'snn'); ?></h4>
-                                    <ul style="margin: 10px 0; padding-left: 20px;">
+                                <div class="snn-gumroad-email-help">
+                                    <h4 class="snn-gumroad-help-title">📧 <?php _e('Available Dynamic Tags:', 'snn'); ?></h4>
+                                    <ul class="snn-gumroad-help-list">
                                         <li><code>{{site_name}}</code> - <?php _e('Your site name', 'snn'); ?></li>
                                         <li><code>{{site_url}}</code> - <?php _e('Your site URL', 'snn'); ?></li>
                                         <li><code>{{product_name}}</code> - <?php _e('Purchased product', 'snn'); ?></li>
@@ -1048,7 +1094,7 @@ class Gumroad_API_WordPress {
                                         <li><code>{{password_reset_url}}</code> - <?php _e('Password reset link', 'snn'); ?></li>
                                     </ul>
                                     <h4>💡 <?php _e('Tips:', 'snn'); ?></h4>
-                                    <ul style="margin: 10px 0; padding-left: 20px;">
+                                    <ul class="snn-gumroad-help-list">
                                         <li><?php _e('Full HTML support - style your email as you wish!', 'snn'); ?></li>
                                         <li><?php _e('Use dynamic tags by wrapping them in double curly braces: {{tag_name}}', 'snn'); ?></li>
                                         <li><?php _e('The template above shows the default email structure', 'snn'); ?></li>
@@ -1248,7 +1294,7 @@ class Gumroad_API_WordPress {
             
             // Show save reminder
             jQuery('#save-products-reminder').remove();
-            jQuery('<div id="save-products-reminder" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0;"><p><strong>⚠️ Products loaded successfully!</strong> Please scroll down and click <strong>"Save Changes"</strong> to persist these products.</p></div>').insertBefore('#products-list');
+            jQuery('<div id="save-products-reminder" class="snn-gumroad-reminder-box"><p><strong>⚠️ Products loaded successfully!</strong> Please scroll down and click <strong>"Save Changes"</strong> to persist these products.</p></div>').insertBefore('#products-list');
             
             var savedProductRoles = <?php echo json_encode($product_roles); ?>;
             
@@ -1692,16 +1738,60 @@ class Gumroad_API_WordPress {
         $total_pages = ceil($total_users / $per_page);
         
         ?>
+        <style>
+        .snn-gumroad-section { padding: 20px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px; }
+        .snn-gumroad-section h2 { margin-top: 0; }
+        .snn-gumroad-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .snn-gumroad-search-buttons { display: flex; gap: 10px; }
+        .snn-gumroad-search-total { margin-left: auto; align-self: center; color: #666; }
+        .snn-gumroad-no-users { background: white; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; text-align: center; }
+        .snn-gumroad-user-entry { background: white; padding: 15px; margin-bottom: 10px; border: 1px solid #ccd0d4; border-radius: 4px; }
+        .snn-gumroad-user-entry:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: box-shadow 0.2s; }
+        .snn-gumroad-user-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+        .snn-gumroad-user-header:hover { background: #f9f9f9; }
+        .snn-gumroad-user-main { flex: 1; display: flex; align-items: center; gap: 15px; }
+        .snn-gumroad-user-details { display: flex; gap: 15px; align-items: center; font-size: 12px; color: #666; }
+        .snn-gumroad-user-info { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
+        .snn-gumroad-user-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .snn-gumroad-user-actions { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; display: flex; gap: 10px; }
+        .snn-gumroad-user-table { font-size: 13px; }
+        .snn-gumroad-user-table th { width: 40%; padding: 8px; background: #f9f9f9; }
+        .snn-gumroad-user-table td { padding: 8px; }
+        .snn-gumroad-user-data { background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; }
+        .snn-gumroad-user-pre { margin: 0; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; }
+        .snn-gumroad-user-section-title { margin-top: 0; font-size: 14px; color: #2271b1; }
+        .snn-gumroad-user-section-title-alt { margin-top: 20px; font-size: 14px; color: #2271b1; }
+        .snn-gumroad-user-history { max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; }
+        .snn-gumroad-user-history-table { font-size: 12px; }
+        .snn-gumroad-user-history-table th { padding: 6px; background: #f5f5f5; }
+        .snn-gumroad-user-history-table td { padding: 6px; }
+        .snn-gumroad-pagination { padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px; margin-top: 10px; text-align: center; }
+        .snn-gumroad-pagination .page-numbers { padding: 5px 10px; margin: 0 2px; border: 1px solid #ccd0d4; background: white; text-decoration: none; display: inline-block; }
+        .snn-gumroad-pagination .page-numbers.current { background: #2271b1; color: white; border-color: #2271b1; }
+        .snn-gumroad-pagination .page-numbers:hover:not(.current) { background: #f0f0f1; }
+        .snn-gumroad-save-section { margin-top: 20px; padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px; display: flex; align-items: center; gap: 15px; }
+        .snn-gumroad-user-main-info { flex: 1; }
+        .snn-gumroad-user-name { font-size: 14px; }
+        .snn-gumroad-user-email { color: #666; margin-left: 10px; font-size: 13px; }
+        .snn-gumroad-user-icon { color: #2271b1; }
+        .snn-gumroad-email-yes { color: green; }
+        .snn-gumroad-email-no { color: #999; }
+        .snn-gumroad-user-table-mb { margin-bottom: 20px; }
+        .tablenav-pages { text-align: center; }
+        .tablenav-pages .page-numbers { padding: 5px 10px; margin: 0 2px; border: 1px solid #ccd0d4; background: white; text-decoration: none; display: inline-block; }
+        .tablenav-pages .page-numbers.current { background: #2271b1; color: white; border-color: #2271b1; }
+        .tablenav-pages .page-numbers:hover:not(.current) { background: #f0f0f1; }
+        </style>
         <div class="wrap">
             <h1><?php _e('Gumroad Users', 'snn'); ?></h1>
             
             <!-- Search & Filter Section -->
-            <div class="gumroad-section" style="padding: 20px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px;">
-                <h2 style="margin-top: 0;"><?php _e('Search & Filter', 'snn'); ?></h2>
+            <div class="snn-gumroad-section">
+                <h2><?php _e('Search & Filter', 'snn'); ?></h2>
                 <form method="get" action="">
                     <input type="hidden" name="page" value="gumroad-api-users" />
                     
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div class="snn-gumroad-search-grid">
                         <div>
                             <label for="search_email"><strong><?php _e('Email', 'snn'); ?></strong></label>
                             <input type="text" name="search_email" id="search_email" value="<?php echo esc_attr($search_email); ?>" class="regular-text" placeholder="<?php _e('Search by email...', 'snn'); ?>" />
@@ -1742,16 +1832,16 @@ class Gumroad_API_WordPress {
                         </div>
                     </div>
                     
-                    <div style="display: flex; gap: 10px;">
+                    <div class="snn-gumroad-search-buttons">
                         <button type="submit" class="button button-primary"><?php _e('Apply Filters', 'snn'); ?></button>
                         <a href="<?php echo admin_url('admin.php?page=gumroad-api-users'); ?>" class="button"><?php _e('Clear Filters', 'snn'); ?></a>
-                        <span style="margin-left: auto; align-self: center; color: #666;"><?php printf(__('Total: %d users', 'snn'), $total_users); ?></span>
+                        <span class="snn-gumroad-search-total"><?php printf(__('Total: %d users', 'snn'), $total_users); ?></span>
                     </div>
                 </form>
             </div>
             
             <?php if (empty($users)): ?>
-                <div style="background: white; padding: 20px; border: 1px solid #ccd0d4; border-radius: 4px; text-align: center;">
+                <div class="snn-gumroad-no-users">
                     <p><?php _e('No users found. Users created through Gumroad purchases will appear here.', 'snn'); ?></p>
                 </div>
             <?php else: ?>
@@ -1775,52 +1865,52 @@ class Gumroad_API_WordPress {
                         // Email preview (first 50 chars)
                         $email_preview = strlen($user->user_email) > 30 ? substr($user->user_email, 0, 30) . '...' : $user->user_email;
                     ?>
-                        <div class="user-entry" style="background: white; padding: 15px; margin-bottom: 10px; border: 1px solid #ccd0d4; border-radius: 4px;">
-                            <div class="user-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 15px;" onclick="toggleUser(<?php echo $user->ID; ?>)">
-                                <div style="flex: 1; display: flex; align-items: center; gap: 15px;">
-                                    <span class="dashicons dashicons-arrow-right" id="icon-<?php echo $user->ID; ?>" style="color: #2271b1;"></span>
-                                    <div style="flex: 1;">
-                                        <strong style="font-size: 14px;"><?php echo esc_html($user->user_login); ?></strong>
-                                        <span style="color: #666; margin-left: 10px; font-size: 13px;"><?php echo esc_html($email_preview); ?></span>
+                        <div class="snn-gumroad-user-entry">
+                            <div class="snn-gumroad-user-header" onclick="toggleUser(<?php echo $user->ID; ?>)">
+                                <div class="snn-gumroad-user-main">
+                                    <span class="dashicons dashicons-arrow-right snn-gumroad-user-icon" id="icon-<?php echo $user->ID; ?>"></span>
+                                    <div class="snn-gumroad-user-main-info">
+                                        <strong class="snn-gumroad-user-name"><?php echo esc_html($user->user_login); ?></strong>
+                                        <span class="snn-gumroad-user-email"><?php echo esc_html($email_preview); ?></span>
                                     </div>
                                 </div>
-                                <div style="display: flex; gap: 15px; align-items: center; font-size: 12px; color: #666;">
+                                <div class="snn-gumroad-user-details">
                                     <span><strong><?php _e('Product:', 'snn'); ?></strong> <?php echo esc_html($product_name ? $product_name : 'N/A'); ?></span>
                                     <span><strong><?php _e('Created:', 'snn'); ?></strong> <?php echo esc_html($created_date ? $created_date : $registered_date); ?></span>
                                     <?php if ($email_sent === 'yes'): ?>
-                                        <span style="color: green;">✓ <?php _e('Email Sent', 'snn'); ?></span>
+                                        <span class="snn-gumroad-email-yes">✓ <?php _e('Email Sent', 'snn'); ?></span>
                                     <?php else: ?>
-                                        <span style="color: #999;">✗ <?php _e('No Email', 'snn'); ?></span>
+                                        <span class="snn-gumroad-email-no">✗ <?php _e('No Email', 'snn'); ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
-                            <div class="user-details" id="user-<?php echo $user->ID; ?>" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <div class="snn-gumroad-user-info" id="user-<?php echo $user->ID; ?>">
+                                <div class="snn-gumroad-user-grid">
                                     <!-- Left Column -->
                                     <div>
-                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('User Information', 'snn'); ?></h3>
-                                        <table class="widefat" style="font-size: 13px;">
-                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('User ID', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->ID); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Username', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->user_login); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Email', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($user->user_email); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Registered', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($registered_date); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Current Roles', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html(implode(', ', $roles)); ?></td></tr>
+                                        <h3 class="snn-gumroad-user-section-title"><?php _e('User Information', 'snn'); ?></h3>
+                                        <table class="widefat snn-gumroad-user-table">
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('User ID', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($user->ID); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Username', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($user->user_login); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Email', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($user->user_email); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Registered', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($registered_date); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Current Roles', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html(implode(', ', $roles)); ?></td></tr>
                                         </table>
                                         
-                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Gumroad Information', 'snn'); ?></h3>
-                                        <table class="widefat" style="font-size: 13px;">
-                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Sale ID', 'snn'); ?></th><td style="padding: 8px;"><code><?php echo esc_html($sale_id ? $sale_id : 'N/A'); ?></code></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product Name', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($product_name ? $product_name : 'N/A'); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product ID', 'snn'); ?></th><td style="padding: 8px;"><code><?php echo esc_html($product_id ? $product_id : 'N/A'); ?></code></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Created Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($created_date ? $created_date : 'N/A'); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Assigned Roles', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($assigned_roles ? implode(', ', json_decode($assigned_roles, true)) : 'N/A'); ?></td></tr>
+                                        <h3 class="snn-gumroad-user-section-title-alt"><?php _e('Gumroad Information', 'snn'); ?></h3>
+                                        <table class="widefat snn-gumroad-user-table">
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Sale ID', 'snn'); ?></th><td class="snn-gumroad-user-table"><code><?php echo esc_html($sale_id ? $sale_id : 'N/A'); ?></code></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Product Name', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($product_name ? $product_name : 'N/A'); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Product ID', 'snn'); ?></th><td class="snn-gumroad-user-table"><code><?php echo esc_html($product_id ? $product_id : 'N/A'); ?></code></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Created Date', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($created_date ? $created_date : 'N/A'); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Assigned Roles', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($assigned_roles ? implode(', ', json_decode($assigned_roles, true)) : 'N/A'); ?></td></tr>
                                         </table>
                                         
-                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Email Status', 'snn'); ?></h3>
-                                        <table class="widefat" style="font-size: 13px;">
-                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Email Sent', 'snn'); ?></th><td style="padding: 8px;"><?php echo $email_sent === 'yes' ? '<span style="color: green;">✓ Yes</span>' : '<span style="color: #999;">✗ No</span>'; ?></td></tr>
+                                        <h3 class="snn-gumroad-user-section-title-alt"><?php _e('Email Status', 'snn'); ?></h3>
+                                        <table class="widefat snn-gumroad-user-table">
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Email Sent', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo $email_sent === 'yes' ? '<span class="snn-gumroad-email-yes">✓ Yes</span>' : '<span class="snn-gumroad-email-no">✗ No</span>'; ?></td></tr>
                                             <?php if ($email_sent === 'yes'): ?>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Email Sent Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($email_sent_date); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Email Sent Date', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($email_sent_date); ?></td></tr>
                                             <?php endif; ?>
                                         </table>
                                     </div>
@@ -1828,10 +1918,10 @@ class Gumroad_API_WordPress {
                                     <!-- Right Column -->
                                     <div>
                                         <?php if ($last_purchase_date): ?>
-                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('Last Purchase', 'snn'); ?></h3>
-                                        <table class="widefat" style="font-size: 13px; margin-bottom: 20px;">
-                                            <tr><th style="width: 40%; padding: 8px; background: #f9f9f9;"><?php _e('Date', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html($last_purchase_date); ?></td></tr>
-                                            <tr><th style="padding: 8px; background: #f9f9f9;"><?php _e('Product', 'snn'); ?></th><td style="padding: 8px;"><?php echo esc_html(get_user_meta($user->ID, 'gumroad_last_product_name', true)); ?></td></tr>
+                                        <h3 class="snn-gumroad-user-section-title"><?php _e('Last Purchase', 'snn'); ?></h3>
+                                        <table class="widefat snn-gumroad-user-table snn-gumroad-user-table-mb">
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Date', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html($last_purchase_date); ?></td></tr>
+                                            <tr><th class="snn-gumroad-user-table"><?php _e('Product', 'snn'); ?></th><td class="snn-gumroad-user-table"><?php echo esc_html(get_user_meta($user->ID, 'gumroad_last_product_name', true)); ?></td></tr>
                                         </table>
                                         <?php endif; ?>
                                         
@@ -1839,22 +1929,22 @@ class Gumroad_API_WordPress {
                                             $history = json_decode($purchase_history, true);
                                             if (is_array($history) && !empty($history)):
                                         ?>
-                                        <h3 style="margin-top: 0; font-size: 14px; color: #2271b1;"><?php _e('Purchase History', 'snn'); ?></h3>
-                                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
-                                            <table class="widefat" style="font-size: 12px;">
+                                        <h3 class="snn-gumroad-user-section-title"><?php _e('Purchase History', 'snn'); ?></h3>
+                                        <div class="snn-gumroad-user-history">
+                                            <table class="widefat snn-gumroad-user-history-table">
                                                 <thead>
                                                     <tr>
-                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Date', 'snn'); ?></th>
-                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Product', 'snn'); ?></th>
-                                                        <th style="padding: 6px; background: #f5f5f5;"><?php _e('Roles Added', 'snn'); ?></th>
+                                                        <th class="snn-gumroad-user-history-table"><?php _e('Date', 'snn'); ?></th>
+                                                        <th class="snn-gumroad-user-history-table"><?php _e('Product', 'snn'); ?></th>
+                                                        <th class="snn-gumroad-user-history-table"><?php _e('Roles Added', 'snn'); ?></th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <?php foreach (array_reverse($history) as $purchase): ?>
                                                     <tr>
-                                                        <td style="padding: 6px;"><?php echo esc_html($purchase['date']); ?></td>
-                                                        <td style="padding: 6px;"><?php echo esc_html($purchase['product_name']); ?></td>
-                                                        <td style="padding: 6px;"><?php echo esc_html(implode(', ', $purchase['roles_added'])); ?></td>
+                                                        <td class="snn-gumroad-user-history-table"><?php echo esc_html($purchase['date']); ?></td>
+                                                        <td class="snn-gumroad-user-history-table"><?php echo esc_html($purchase['product_name']); ?></td>
+                                                        <td class="snn-gumroad-user-history-table"><?php echo esc_html(implode(', ', $purchase['roles_added'])); ?></td>
                                                     </tr>
                                                     <?php endforeach; ?>
                                                 </tbody>
@@ -1862,9 +1952,9 @@ class Gumroad_API_WordPress {
                                         </div>
                                         <?php endif; endif; ?>
                                         
-                                        <h3 style="margin-top: 20px; font-size: 14px; color: #2271b1;"><?php _e('Raw Sale Data', 'snn'); ?></h3>
-                                        <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto;">
-                                            <pre style="margin: 0; font-size: 11px; white-space: pre-wrap; word-wrap: break-word;"><?php 
+                                        <h3 class="snn-gumroad-user-section-title-alt"><?php _e('Raw Sale Data', 'snn'); ?></h3>
+                                        <div class="snn-gumroad-user-data">
+                                            <pre class="snn-gumroad-user-pre"><?php 
                                                 if ($sale_data) {
                                                     $decoded_data = json_decode($sale_data, true);
                                                     echo esc_html(print_r($decoded_data, true));
@@ -1876,7 +1966,7 @@ class Gumroad_API_WordPress {
                                     </div>
                                 </div>
                                 
-                                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; display: flex; gap: 10px;">
+                                <div class="snn-gumroad-user-actions">
                                     <a href="<?php echo admin_url('user-edit.php?user_id=' . $user->ID); ?>" class="button button-primary" target="_blank"><?php _e('Edit User', 'snn'); ?></a>
                                     <a href="mailto:<?php echo esc_attr($user->user_email); ?>" class="button"><?php _e('Send Email', 'snn'); ?></a>
                                 </div>
@@ -1886,7 +1976,7 @@ class Gumroad_API_WordPress {
                 </div>
                 
                 <?php if ($total_pages > 1): ?>
-                    <div class="tablenav bottom" style="padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px; margin-top: 10px;">
+                    <div class="snn-gumroad-pagination">
                         <div class="tablenav-pages">
                             <?php
                             echo paginate_links(array(
@@ -1904,8 +1994,8 @@ class Gumroad_API_WordPress {
                 <?php endif; ?>
                 
                 <!-- Save Button at Bottom -->
-                <div style="margin-top: 20px; padding: 15px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
-                    <form method="post" action="" style="display: flex; align-items: center; gap: 15px;">
+                <div class="snn-gumroad-save-section">
+                    <form method="post" action="" class="snn-gumroad-save-section">
                         <?php wp_nonce_field('gumroad_save_user_list_settings', 'gumroad_user_list_settings_nonce'); ?>
                         <label for="user_list_per_page_bottom"><strong><?php _e('Users per page:', 'snn'); ?></strong></label>
                         <input type="number" name="user_list_per_page" id="user_list_per_page_bottom" value="<?php echo esc_attr($per_page); ?>" class="small-text" min="1" max="100" />
@@ -1930,35 +2020,6 @@ class Gumroad_API_WordPress {
             }
         }
         </script>
-        
-        <style>
-        .user-entry:hover {
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: box-shadow 0.2s;
-        }
-        .user-header:hover {
-            background: #f9f9f9;
-        }
-        .tablenav-pages {
-            text-align: center;
-        }
-        .tablenav-pages .page-numbers {
-            padding: 5px 10px;
-            margin: 0 2px;
-            border: 1px solid #ccd0d4;
-            background: white;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .tablenav-pages .page-numbers.current {
-            background: #2271b1;
-            color: white;
-            border-color: #2271b1;
-        }
-        .tablenav-pages .page-numbers:hover:not(.current) {
-            background: #f0f0f1;
-        }
-        </style>
         <?php
     }
 }
