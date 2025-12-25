@@ -3,7 +3,7 @@
  * Plugin Name: Gumroad API WordPress
  * Plugin URI: https://github.com/sinanisler/gumroad-api-wordpress
  * Description: Connect your WordPress site with Gumroad to automatically create user accounts when customers make a purchase.
- * Version: 0.1
+ * Version: 0.2
  * Author: sinanisler
  * Author URI: https://sinanisler.com
  * License: GPL v2 or later
