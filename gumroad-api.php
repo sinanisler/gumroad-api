@@ -437,54 +437,27 @@ class Gumroad_API_WordPress {
      * Get default email template
      */
     private function get_default_email_template() {
-        return '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #0073aa; color: white; padding: 20px; text-align: center; }
-        .content { background: #f9f9f9; padding: 30px; }
-        .button { display: inline-block; padding: 12px 24px; background: #0073aa; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0; }
-        .credentials { background: white; padding: 15px; border-left: 4px solid #0073aa; margin: 20px 0; }
-        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Welcome to {{site_name}}!</h1>
-        </div>
-        <div class="content">
-            <p>Hi there!</p>
-            <p>Thank you for purchasing <strong>{{product_name}}</strong>! Your account has been created automatically.</p>
-            
-            <div class="credentials">
-                <h3>Your Login Credentials:</h3>
-                <p><strong>Username:</strong> {{username}}</p>
-                <p><strong>Password:</strong> {{password}}</p>
-                <p><strong>Email:</strong> {{email}}</p>
-            </div>
-            
-            <p>You can access your account using the button below:</p>
-            <p style="text-align: center;">
-                <a href="{{login_url}}" class="button">Login to Your Account</a>
-            </p>
-            
-            <p>If you prefer to reset your password, use this link:</p>
-            <p style="text-align: center;">
-                <a href="{{password_reset_url}}" class="button">Reset Password</a>
-            </p>
-            
-            <p><strong>Important:</strong> Please keep this email safe as it contains your login credentials.</p>
-        </div>
-        <div class="footer">
-            <p>&copy; {{site_name}} - <a href="{{site_url}}">{{site_url}}</a></p>
-        </div>
-    </div>
-</body>
-</html>';
+        return '<h2>Welcome to {{site_name}}!</h2>
+
+<p>Hi there!</p>
+
+<p>Thank you for purchasing <strong>{{product_name}}</strong>! Your account has been created automatically.</p>
+
+<h3>Your Login Credentials:</h3>
+
+<p><strong>Username:</strong> {{username}}<br>
+<strong>Password:</strong> {{password}}<br>
+<strong>Email:</strong> {{email}}</p>
+
+<p><a href="{{login_url}}">Login to Your Account</a></p>
+
+<p>If you prefer to reset your password, use this link:<br>
+<a href="{{password_reset_url}}">Reset Password</a></p>
+
+<p><strong>Important:</strong> Please keep this email safe as it contains your login credentials.</p>
+
+<br>
+<p>{{site_name}} - <a href="{{site_url}}">{{site_url}}</a></p>';
     }
     
     /**
