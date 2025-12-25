@@ -57,9 +57,9 @@ class Gumroad_API_WordPress {
         <style>
         .snn-gumroad-stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: 1fr 1fr 1fr 1fr;
             gap: 20px;
-            margin-top: 30px;
+            margin-bottom: 30px;
         }
         
         .snn-gumroad-stat-card {
@@ -78,7 +78,7 @@ class Gumroad_API_WordPress {
         }
         
         .snn-gumroad-stat-card-value {
-            font-size: 36px;
+            font-size: 22px;
             font-weight: bold;
             color: #000;
         }
@@ -184,6 +184,9 @@ class Gumroad_API_WordPress {
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             margin-bottom: 15px;
+        }
+        .snn-gumroad-search-filters input{
+            width: 100%;
         }
         
         .snn-gumroad-search-actions {
