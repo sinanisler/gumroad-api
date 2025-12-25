@@ -116,7 +116,7 @@ class Gumroad_API_WordPress {
             'gumroad-api',
             array($this, 'settings_page'),
             'dashicons-cart',
-            55
+            80
         );
         
         add_submenu_page(
