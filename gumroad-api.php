@@ -42,6 +42,7 @@ class Gumroad_API_WordPress {
         // AJAX handlers
         add_action('wp_ajax_gumroad_test_api', array($this, 'test_api_connection'));
         add_action('wp_ajax_gumroad_clear_logs', array($this, 'clear_logs'));
+        add_action('wp_ajax_gumroad_fetch_products', array($this, 'fetch_products'));
     }
     
     /**
@@ -51,7 +52,8 @@ class Gumroad_API_WordPress {
         // Set default options
         $default_options = array(
             'access_token' => '',
-            'default_role' => 'subscriber',
+            'auto_create_users' => false,
+            'default_roles' => array('subscriber'),
             'product_roles' => array(),
             'cron_interval' => 120,
             'sales_limit' => 50,
@@ -249,17 +251,42 @@ class Gumroad_API_WordPress {
             return new WP_Error('invalid_email', 'Email address is required');
         }
         
+        $settings = get_option($this->option_name);
+        $auto_create_users = isset($settings['auto_create_users']) ? $settings['auto_create_users'] : false;
+        
+        // Check if auto user creation is disabled
+        if (!$auto_create_users) {
+            $this->log_activity('User creation skipped', array(
+                'reason' => 'Auto create users is disabled',
+                'email' => $email,
+                'product' => $product_name
+            ));
+            return new WP_Error('auto_create_disabled', 'Automatic user creation is disabled');
+        }
+        
         // Check if user exists
         $user = get_user_by('email', $email);
         
-        $settings = get_option($this->option_name);
-        $default_role = isset($settings['default_role']) ? $settings['default_role'] : 'subscriber';
+        $default_roles = isset($settings['default_roles']) ? $settings['default_roles'] : array('subscriber');
         $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
         
-        // Determine role
-        $role = $default_role;
-        if (!empty($product_id) && isset($product_roles[$product_id])) {
-            $role = $product_roles[$product_id];
+        // Determine roles for this product
+        $roles = array();
+        if (!empty($product_id) && isset($product_roles[$product_id]) && !empty($product_roles[$product_id])) {
+            $roles = $product_roles[$product_id];
+        } else {
+            $roles = $default_roles;
+        }
+        
+        // If no roles configured, skip user creation
+        if (empty($roles)) {
+            $this->log_activity('User creation skipped', array(
+                'reason' => 'No roles configured for this product',
+                'email' => $email,
+                'product' => $product_name,
+                'product_id' => $product_id
+            ));
+            return new WP_Error('no_roles_configured', 'No roles configured for this product');
         }
         
         if (!$user) {
@@ -274,7 +301,12 @@ class Gumroad_API_WordPress {
             }
             
             $user = get_user_by('id', $user_id);
-            $user->set_role($role);
+            
+            // Assign roles
+            $user->set_role($roles[0]); // Set primary role
+            for ($i = 1; $i < count($roles); $i++) {
+                $user->add_role($roles[$i]); // Add additional roles
+            }
             
             // Send welcome email
             if (isset($settings['send_welcome_email']) && $settings['send_welcome_email']) {
@@ -285,20 +317,26 @@ class Gumroad_API_WordPress {
                 'user_id' => $user_id,
                 'email' => $email,
                 'product' => $product_name,
-                'role' => $role
+                'roles' => $roles
             ));
             
             return $user_id;
         } else {
-            // Update existing user role if needed
-            if (!in_array($role, (array) $user->roles)) {
-                $user->set_role($role);
-                
-                $this->log_activity('User role updated', array(
+            // Update existing user roles if needed
+            $roles_added = array();
+            foreach ($roles as $role) {
+                if (!in_array($role, (array) $user->roles)) {
+                    $user->add_role($role);
+                    $roles_added[] = $role;
+                }
+            }
+            
+            if (!empty($roles_added)) {
+                $this->log_activity('User roles updated', array(
                     'user_id' => $user->ID,
                     'email' => $email,
                     'product' => $product_name,
-                    'new_role' => $role
+                    'roles_added' => $roles_added
                 ));
             }
             
@@ -443,6 +481,9 @@ class Gumroad_API_WordPress {
         
         $settings = get_option($this->option_name);
         $webhook_url = rest_url('gumroad-api/v1/webhook');
+        $auto_create_users = isset($settings['auto_create_users']) ? $settings['auto_create_users'] : false;
+        $default_roles = isset($settings['default_roles']) ? $settings['default_roles'] : array('subscriber');
+        $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
         
         ?>
         <div class="wrap">
@@ -453,7 +494,7 @@ class Gumroad_API_WordPress {
                 
                 <h2 class="nav-tab-wrapper">
                     <a href="#tab-connection" class="nav-tab nav-tab-active"><?php _e('Connection', 'snn'); ?></a>
-                    <a href="#tab-roles" class="nav-tab"><?php _e('User Roles', 'snn'); ?></a>
+                    <a href="#tab-roles" class="nav-tab"><?php _e('User Management', 'snn'); ?></a>
                     <a href="#tab-email" class="nav-tab"><?php _e('Welcome Email', 'snn'); ?></a>
                     <a href="#tab-cron" class="nav-tab"><?php _e('Cron Settings', 'snn'); ?></a>
                 </h2>
@@ -471,12 +512,14 @@ class Gumroad_API_WordPress {
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row"><label for="access_token"><?php _e('Access Token', 'snn'); ?></label></th>
+                            <th scope="row"><label for="access_token"><?php _e('Gumroad Access Token', 'snn'); ?></label></th>
                             <td>
                                 <input type="password" name="access_token" id="access_token" value="<?php echo esc_attr($settings['access_token']); ?>" class="regular-text" />
                                 <button type="button" class="button" onclick="togglePassword('access_token')"><?php _e('Show/Hide', 'snn'); ?></button>
-                                <button type="button" class="button" onclick="testApiConnection()"><?php _e('Test Connection', 'snn'); ?></button>
-                                <p class="description"><?php _e('Generate this from your Gumroad application settings', 'snn'); ?></p>
+                                <button type="button" class="button button-primary" onclick="testApiConnection()"><?php _e('Test & Fetch Products', 'snn'); ?></button>
+                                <p class="description">
+                                    <?php _e('1. Go to your Gumroad Settings → Applications<br>2. Create a new application (or use existing)<br>3. Click "Generate access token"<br>4. Paste the token here', 'snn'); ?>
+                                </p>
                                 <div id="api-test-result"></div>
                             </td>
                         </tr>
@@ -485,37 +528,74 @@ class Gumroad_API_WordPress {
                 
                 <!-- Roles Tab -->
                 <div id="tab-roles" class="tab-content" style="display:none;">
-                    <h2><?php _e('User Role Assignment', 'snn'); ?></h2>
+                    <h2><?php _e('User Management', 'snn'); ?></h2>
                     <table class="form-table">
                         <tr>
-                            <th scope="row"><label for="default_role"><?php _e('Default User Role', 'snn'); ?></label></th>
+                            <th scope="row"><?php _e('Auto Create Users', 'snn'); ?></th>
                             <td>
-                                <select name="default_role" id="default_role">
-                                    <?php wp_dropdown_roles($settings['default_role']); ?>
-                                </select>
-                                <p class="description"><?php _e('Default role assigned to new users', 'snn'); ?></p>
+                                <label>
+                                    <input type="checkbox" name="auto_create_users" value="1" <?php checked($auto_create_users, 1); ?> />
+                                    <strong><?php _e('Automatically create WordPress users for Gumroad purchases', 'snn'); ?></strong>
+                                </label>
+                                <p class="description"><?php _e('When enabled, a new WordPress user will be created for each purchase.', 'snn'); ?></p>
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row"><?php _e('Product-Specific Roles', 'snn'); ?></th>
+                            <th scope="row"><?php _e('Assign User Roles', 'snn'); ?></th>
                             <td>
-                                <div id="product-roles">
-                                    <?php
-                                    $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
-                                    if (!empty($product_roles)) {
-                                        foreach ($product_roles as $product_id => $role) {
-                                            $this->render_product_role_row($product_id, $role);
-                                        }
-                                    } else {
-                                        $this->render_product_role_row('', '');
-                                    }
-                                    ?>
-                                </div>
-                                <button type="button" class="button" onclick="addProductRole()"><?php _e('Add Product Role', 'snn'); ?></button>
-                                <p class="description"><?php _e('Assign specific roles based on product IDs. Find product IDs in your Gumroad dashboard.', 'snn'); ?></p>
+                                <p class="description" style="margin-top: 0;"><?php _e('Select which role(s) to assign to newly created users. You can select multiple roles.', 'snn'); ?></p>
+                                <?php
+                                global $wp_roles;
+                                $all_roles = $wp_roles->roles;
+                                foreach ($all_roles as $role_key => $role_info) {
+                                    $checked = in_array($role_key, $default_roles) ? 'checked' : '';
+                                    echo '<label style="display: block; margin: 5px 0;">';
+                                    echo '<input type="checkbox" name="default_roles[]" value="' . esc_attr($role_key) . '" ' . $checked . ' /> ';
+                                    echo esc_html($role_info['name']);
+                                    echo '</label>';
+                                }
+                                ?>
+                                <p class="description"><?php _e('Use role management plugins to create custom roles if needed.', 'snn'); ?></p>
                             </td>
                         </tr>
                     </table>
+                    
+                    <hr style="margin: 30px 0;">
+                    
+                    <h3><?php _e('Product-Specific Role Assignment', 'snn'); ?></h3>
+                    <p><?php _e('Configure which roles should be assigned for each product purchase. If no roles are selected for a product, the default "Assign User Roles" setting above will be used.', 'snn'); ?></p>
+                    
+                    <div id="products-notice" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                        <p><strong><?php _e('⚠️ Please test your API connection first to load your products.', 'snn'); ?></strong></p>
+                        <p><?php _e('Go to the "Connection" tab and click "Test & Fetch Products" button.', 'snn'); ?></p>
+                    </div>
+                    
+                    <div id="products-loading" style="display: none; text-align: center; padding: 20px;">
+                        <span class="spinner is-active"></span>
+                        <p><?php _e('Loading products...', 'snn'); ?></p>
+                    </div>
+                    
+                    <div id="products-list" style="display: none;">
+                        <table class="wp-list-table widefat fixed striped">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40%;"><?php _e('Product Name', 'snn'); ?></th>
+                                    <th style="width: 20%;"><?php _e('Product ID', 'snn'); ?></th>
+                                    <th style="width: 15%;"><?php _e('Status', 'snn'); ?></th>
+                                    <th style="width: 25%;"><?php _e('Select roles to assign for this product', 'snn'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody id="products-tbody">
+                                <!-- Products will be loaded here via AJAX -->
+                            </tbody>
+                        </table>
+                        <p class="description" style="margin-top: 15px;">
+                            <strong><?php _e('💡 How it works:', 'snn'); ?></strong><br>
+                            • <?php _e('Configure specific roles for each product, or leave unchecked to use default roles (backward compatible)', 'snn'); ?><br>
+                            • <?php _e('Only products with assigned roles will trigger user creation', 'snn'); ?><br>
+                            • <?php _e('If NO products have roles assigned, ALL purchases will create users with default roles (backward compatible)', 'snn'); ?>
+                        </p>
+                    </div>
                 </div>
                 
                 <!-- Email Tab -->
@@ -599,6 +679,8 @@ class Gumroad_API_WordPress {
         </div>
         
         <script>
+        var gumroadProducts = [];
+        
         function copyWebhookUrl() {
             var copyText = document.getElementById("webhook-url");
             copyText.select();
@@ -617,12 +699,13 @@ class Gumroad_API_WordPress {
             var resultDiv = document.getElementById('api-test-result');
             
             if (!token) {
-                resultDiv.innerHTML = '<p style="color: red;">Please enter an access token first.</p>';
+                resultDiv.innerHTML = '<p style="color: red;">⚠️ Please enter an access token first.</p>';
                 return;
             }
             
-            resultDiv.innerHTML = '<p>Testing connection...</p>';
+            resultDiv.innerHTML = '<p><span class="spinner is-active" style="float: none;"></span> Testing connection and fetching products...</p>';
             
+            // First test the API
             jQuery.ajax({
                 url: ajaxurl,
                 type: 'POST',
@@ -634,14 +717,94 @@ class Gumroad_API_WordPress {
                 success: function(response) {
                     if (response.success) {
                         resultDiv.innerHTML = '<p style="color: green;">✓ ' + response.data.message + '</p>';
+                        // Now fetch products
+                        fetchProducts(token);
                     } else {
                         resultDiv.innerHTML = '<p style="color: red;">✗ ' + response.data.message + '</p>';
                     }
                 },
                 error: function() {
-                    resultDiv.innerHTML = '<p style="color: red;">Connection test failed.</p>';
+                    resultDiv.innerHTML = '<p style="color: red;">✗ Connection test failed.</p>';
                 }
             });
+        }
+        
+        function fetchProducts(token) {
+            jQuery('#products-loading').show();
+            jQuery('#products-notice').hide();
+            
+            jQuery.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'gumroad_fetch_products',
+                    token: token,
+                    nonce: '<?php echo wp_create_nonce('gumroad_fetch_products'); ?>'
+                },
+                success: function(response) {
+                    jQuery('#products-loading').hide();
+                    if (response.success) {
+                        gumroadProducts = response.data.products;
+                        displayProducts(response.data.products);
+                        jQuery('#products-list').show();
+                    } else {
+                        alert('Failed to fetch products: ' + response.data.message);
+                    }
+                },
+                error: function() {
+                    jQuery('#products-loading').hide();
+                    alert('Failed to fetch products. Please try again.');
+                }
+            });
+        }
+        
+        function displayProducts(products) {
+            var tbody = jQuery('#products-tbody');
+            tbody.empty();
+            
+            if (products.length === 0) {
+                tbody.append('<tr><td colspan="4" style="text-align: center;">No products found. Create products in your Gumroad dashboard first.</td></tr>');
+                return;
+            }
+            
+            var savedProductRoles = <?php echo json_encode($product_roles); ?>;
+            
+            products.forEach(function(product) {
+                var statusBadge = product.published 
+                    ? '<span style="color: green;">● Published</span>' 
+                    : '<span style="color: gray;">● Unpublished</span>';
+                
+                var savedRoles = savedProductRoles[product.id] || [];
+                
+                var rolesHtml = '<div class="product-roles-checkboxes">';
+                <?php
+                global $wp_roles;
+                foreach ($wp_roles->roles as $role_key => $role_info) {
+                    echo "rolesHtml += '<label style=\"display: block; margin: 3px 0;\"><input type=\"checkbox\" name=\"product_roles[' + product.id + '][]\" value=\"" . esc_js($role_key) . "\" ' + (savedRoles.indexOf('" . esc_js($role_key) . "') !== -1 ? 'checked' : '') + ' /> " . esc_js($role_info['name']) . "</label>';";
+                }
+                ?>
+                rolesHtml += '</div>';
+                
+                var row = '<tr>' +
+                    '<td><strong>' + escapeHtml(product.name) + '</strong></td>' +
+                    '<td><code>' + escapeHtml(product.id) + '</code></td>' +
+                    '<td>' + statusBadge + '</td>' +
+                    '<td>' + rolesHtml + '<input type="hidden" name="product_ids[]" value="' + escapeHtml(product.id) + '" /></td>' +
+                    '</tr>';
+                
+                tbody.append(row);
+            });
+        }
+        
+        function escapeHtml(text) {
+            var map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
         
         // Tab switching
@@ -653,52 +816,40 @@ class Gumroad_API_WordPress {
                 $('.tab-content').hide();
                 $($(this).attr('href')).show();
             });
+            
+            // Load products on page load if token exists
+            var token = $('#access_token').val();
+            if (token && token.length > 0) {
+                // Check if we're on the roles tab, if so, try to load products
+                setTimeout(function() {
+                    var savedProducts = <?php echo json_encode(array_keys($product_roles)); ?>;
+                    if (savedProducts.length > 0) {
+                        $('#products-notice').hide();
+                        $('#products-list').show();
+                    }
+                }, 100);
+            }
         });
-        
-        function addProductRole() {
-            var container = document.getElementById('product-roles');
-            var index = container.children.length;
-            var html = '<div class="product-role-row" style="margin-bottom: 10px;">' +
-                '<input type="text" name="product_roles_id[]" placeholder="Product ID" class="regular-text" /> ' +
-                '<select name="product_roles_role[]">' +
-                <?php
-                global $wp_roles;
-                foreach ($wp_roles->roles as $role_key => $role) {
-                    echo "'<option value=\"" . esc_attr($role_key) . "\">" . esc_html($role['name']) . "</option>' + ";
-                }
-                ?>
-                '</select> ' +
-                '<button type="button" class="button" onclick="removeProductRole(this)">Remove</button>' +
-                '</div>';
-            container.insertAdjacentHTML('beforeend', html);
-        }
-        
-        function removeProductRole(button) {
-            button.parentElement.remove();
-        }
         </script>
         
         <style>
         .nav-tab-wrapper { margin-bottom: 20px; }
         .tab-content { padding: 20px; background: white; border: 1px solid #ccd0d4; border-top: none; }
         .product-role-row { margin-bottom: 10px; }
+        .product-roles-checkboxes label { font-weight: normal; }
+        #products-list table { margin-top: 20px; }
+        #products-list th { padding: 10px; background: #f5f5f5; font-weight: 600; }
+        #products-list td { padding: 10px; vertical-align: top; }
         </style>
         <?php
     }
     
     /**
-     * Render product role row
+     * Render product role row (deprecated, kept for compatibility)
      */
     private function render_product_role_row($product_id, $role) {
-        ?>
-        <div class="product-role-row" style="margin-bottom: 10px;">
-            <input type="text" name="product_roles_id[]" value="<?php echo esc_attr($product_id); ?>" placeholder="Product ID" class="regular-text" />
-            <select name="product_roles_role[]">
-                <?php wp_dropdown_roles($role); ?>
-            </select>
-            <button type="button" class="button" onclick="removeProductRole(this)"><?php _e('Remove', 'snn'); ?></button>
-        </div>
-        <?php
+        // This method is no longer used but kept for backward compatibility
+        return;
     }
     
     /**
@@ -707,7 +858,8 @@ class Gumroad_API_WordPress {
     private function save_settings($post_data) {
         $settings = array(
             'access_token' => isset($post_data['access_token']) ? sanitize_text_field($post_data['access_token']) : '',
-            'default_role' => isset($post_data['default_role']) ? sanitize_text_field($post_data['default_role']) : 'subscriber',
+            'auto_create_users' => isset($post_data['auto_create_users']) ? true : false,
+            'default_roles' => isset($post_data['default_roles']) ? array_map('sanitize_text_field', $post_data['default_roles']) : array('subscriber'),
             'cron_interval' => isset($post_data['cron_interval']) ? intval($post_data['cron_interval']) : 120,
             'sales_limit' => isset($post_data['sales_limit']) ? intval($post_data['sales_limit']) : 50,
             'send_welcome_email' => isset($post_data['send_welcome_email']) ? true : false,
@@ -718,13 +870,10 @@ class Gumroad_API_WordPress {
         );
         
         // Process product roles
-        if (isset($post_data['product_roles_id']) && isset($post_data['product_roles_role'])) {
-            $product_ids = $post_data['product_roles_id'];
-            $roles = $post_data['product_roles_role'];
-            
-            for ($i = 0; $i < count($product_ids); $i++) {
-                if (!empty($product_ids[$i]) && !empty($roles[$i])) {
-                    $settings['product_roles'][sanitize_text_field($product_ids[$i])] = sanitize_text_field($roles[$i]);
+        if (isset($post_data['product_roles']) && is_array($post_data['product_roles'])) {
+            foreach ($post_data['product_roles'] as $product_id => $roles) {
+                if (is_array($roles) && !empty($roles)) {
+                    $settings['product_roles'][sanitize_text_field($product_id)] = array_map('sanitize_text_field', $roles);
                 }
             }
         }
@@ -763,6 +912,47 @@ class Gumroad_API_WordPress {
         if (isset($data['success']) && $data['success']) {
             $user_name = isset($data['user']['name']) ? $data['user']['name'] : 'Unknown';
             wp_send_json_success(array('message' => 'Connected successfully! User: ' . $user_name));
+        } else {
+            $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
+            wp_send_json_error(array('message' => 'API Error: ' . $error_message));
+        }
+    }
+    
+    /**
+     * Fetch products from Gumroad
+     */
+    public function fetch_products() {
+        check_ajax_referer('gumroad_fetch_products', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
+        
+        if (empty($token)) {
+            wp_send_json_error(array('message' => 'Access token is required'));
+        }
+        
+        $response = wp_remote_get('https://api.gumroad.com/v2/products?access_token=' . $token);
+        
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => 'Failed to fetch products: ' . $response->get_error_message()));
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (isset($data['success']) && $data['success'] && isset($data['products'])) {
+            $products = array();
+            foreach ($data['products'] as $product) {
+                $products[] = array(
+                    'id' => $product['id'],
+                    'name' => $product['name'],
+                    'published' => $product['published']
+                );
+            }
+            wp_send_json_success(array('products' => $products));
         } else {
             $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
             wp_send_json_error(array('message' => 'API Error: ' . $error_message));
