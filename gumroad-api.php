@@ -59,7 +59,12 @@ class Gumroad_API_WordPress {
             'email_subject' => 'Welcome to {{site_name}}!',
             'email_template' => $this->get_default_email_template(),
             'log_limit' => 500,
-            'user_list_per_page' => 20
+            'user_list_per_page' => 20,
+            'handle_refunds' => true,
+            'refund_action' => 'remove_roles',
+            'handle_subscriptions' => true,
+            'subscription_cancellation_action' => 'remove_roles',
+            'log_rotation_days' => 30
         );
         
         if (!get_option($this->option_name)) {
@@ -115,23 +120,32 @@ class Gumroad_API_WordPress {
             __('Gumroad API', 'snn'),
             __('Gumroad API', 'snn'),
             'manage_options',
-            'gumroad-api',
-            array($this, 'settings_page'),
+            'gumroad-api-dashboard',
+            array($this, 'dashboard_page'),
             'dashicons-cart',
             120
         );
         
         add_submenu_page(
-            'gumroad-api',
+            'gumroad-api-dashboard',
+            __('Dashboard', 'snn'),
+            __('Dashboard', 'snn'),
+            'manage_options',
+            'gumroad-api-dashboard',
+            array($this, 'dashboard_page')
+        );
+        
+        add_submenu_page(
+            'gumroad-api-dashboard',
             __('Settings', 'snn'),
             __('Settings', 'snn'),
             'manage_options',
-            'gumroad-api',
+            'gumroad-api-settings',
             array($this, 'settings_page')
         );
         
         add_submenu_page(
-            'gumroad-api',
+            'gumroad-api-dashboard',
             __('API Logs', 'snn'),
             __('API Logs', 'snn'),
             'manage_options',
@@ -140,7 +154,7 @@ class Gumroad_API_WordPress {
         );
         
         add_submenu_page(
-            'gumroad-api',
+            'gumroad-api-dashboard',
             __('User List', 'snn'),
             __('User List', 'snn'),
             'manage_options',
@@ -189,10 +203,39 @@ class Gumroad_API_WordPress {
         if (isset($data['sales']) && is_array($data['sales'])) {
             $processed_sales = get_option('gumroad_processed_sales', array());
             $new_sales_count = 0;
+            $refunds_processed = 0;
+            $subscriptions_updated = 0;
             
             foreach (array_slice($data['sales'], 0, $sales_limit) as $sale) {
                 $sale_id = isset($sale['id']) ? $sale['id'] : '';
                 $email = isset($sale['email']) ? sanitize_email($sale['email']) : '';
+                
+                // Handle refunds
+                if (isset($settings['handle_refunds']) && $settings['handle_refunds']) {
+                    if ((isset($sale['refunded']) && $sale['refunded']) || 
+                        (isset($sale['chargedback']) && $sale['chargedback']) || 
+                        (isset($sale['partially_refunded']) && $sale['partially_refunded'])) {
+                        $refund_result = $this->handle_refund($sale);
+                        if (!is_wp_error($refund_result)) {
+                            $refunds_processed++;
+                        }
+                        continue;
+                    }
+                }
+                
+                // Handle subscription status changes
+                if (isset($settings['handle_subscriptions']) && $settings['handle_subscriptions']) {
+                    if (isset($sale['subscription_id']) && !empty($sale['subscription_id'])) {
+                        if ((isset($sale['cancelled']) && $sale['cancelled']) || 
+                            (isset($sale['ended']) && $sale['ended'])) {
+                            $sub_result = $this->handle_subscription_change($sale);
+                            if (!is_wp_error($sub_result)) {
+                                $subscriptions_updated++;
+                            }
+                            continue;
+                        }
+                    }
+                }
                 
                 // Check if sale was processed AND user still exists
                 $should_process = true;
@@ -234,7 +277,9 @@ class Gumroad_API_WordPress {
             
             $this->log_activity('Cron completed', array(
                 'total_sales_checked' => count($data['sales']),
-                'new_sales_processed' => $new_sales_count
+                'new_sales_processed' => $new_sales_count,
+                'refunds_processed' => $refunds_processed,
+                'subscriptions_updated' => $subscriptions_updated
             ));
         }
     }
@@ -467,6 +512,7 @@ class Gumroad_API_WordPress {
         $logs = get_option($this->log_option_name, array());
         $settings = get_option($this->option_name);
         $log_limit = isset($settings['log_limit']) ? intval($settings['log_limit']) : 500;
+        $log_rotation_days = isset($settings['log_rotation_days']) ? intval($settings['log_rotation_days']) : 30;
         
         $log_entry = array(
             'timestamp' => current_time('mysql'),
@@ -476,12 +522,378 @@ class Gumroad_API_WordPress {
         
         array_unshift($logs, $log_entry);
         
-        // Limit log size
+        // Log rotation by date - remove logs older than specified days
+        $cutoff_date = date('Y-m-d H:i:s', strtotime("-{$log_rotation_days} days"));
+        $logs = array_filter($logs, function($log) use ($cutoff_date) {
+            return isset($log['timestamp']) && $log['timestamp'] >= $cutoff_date;
+        });
+        
+        // Also limit log size as backup
         if (count($logs) > $log_limit) {
             $logs = array_slice($logs, 0, $log_limit);
         }
         
-        update_option($this->log_option_name, $logs);
+        update_option($this->log_option_name, array_values($logs));
+    }
+    
+    /**
+     * Handle refund
+     */
+    private function handle_refund($sale_data) {
+        $settings = get_option($this->option_name);
+        $email = isset($sale_data['email']) ? sanitize_email($sale_data['email']) : '';
+        $sale_id = isset($sale_data['id']) ? $sale_data['id'] : '';
+        $product_name = isset($sale_data['product_name']) ? sanitize_text_field($sale_data['product_name']) : '';
+        
+        if (empty($email)) {
+            return new WP_Error('invalid_email', 'Email address is required');
+        }
+        
+        $user = get_user_by('email', $email);
+        if (!$user) {
+            $this->log_activity('Refund processing skipped', array(
+                'reason' => 'User not found',
+                'email' => $email,
+                'sale_id' => $sale_id
+            ));
+            return new WP_Error('user_not_found', 'User not found');
+        }
+        
+        $refund_action = isset($settings['refund_action']) ? $settings['refund_action'] : 'remove_roles';
+        
+        if ($refund_action === 'delete_account') {
+            require_once(ABSPATH.'wp-admin/includes/user.php');
+            wp_delete_user($user->ID);
+            
+            $this->log_activity('User deleted due to refund', array(
+                'user_id' => $user->ID,
+                'email' => $email,
+                'sale_id' => $sale_id,
+                'product' => $product_name
+            ));
+        } else {
+            // Remove roles assigned by Gumroad
+            $assigned_roles = get_user_meta($user->ID, 'gumroad_assigned_roles', true);
+            if ($assigned_roles) {
+                $roles = json_decode($assigned_roles, true);
+                if (is_array($roles)) {
+                    foreach ($roles as $role) {
+                        $user->remove_role($role);
+                    }
+                }
+            }
+            
+            update_user_meta($user->ID, 'gumroad_refunded', 'yes');
+            update_user_meta($user->ID, 'gumroad_refunded_date', current_time('mysql'));
+            
+            $this->log_activity('User roles removed due to refund', array(
+                'user_id' => $user->ID,
+                'email' => $email,
+                'sale_id' => $sale_id,
+                'product' => $product_name,
+                'roles_removed' => $roles
+            ));
+        }
+        
+        return $user->ID;
+    }
+    
+    /**
+     * Handle subscription change (cancellation/end)
+     */
+    private function handle_subscription_change($sale_data) {
+        $settings = get_option($this->option_name);
+        $email = isset($sale_data['email']) ? sanitize_email($sale_data['email']) : '';
+        $subscription_id = isset($sale_data['subscription_id']) ? $sale_data['subscription_id'] : '';
+        $product_name = isset($sale_data['product_name']) ? sanitize_text_field($sale_data['product_name']) : '';
+        
+        if (empty($email)) {
+            return new WP_Error('invalid_email', 'Email address is required');
+        }
+        
+        $user = get_user_by('email', $email);
+        if (!$user) {
+            return new WP_Error('user_not_found', 'User not found');
+        }
+        
+        $action = isset($settings['subscription_cancellation_action']) ? $settings['subscription_cancellation_action'] : 'remove_roles';
+        
+        if ($action === 'delete_account') {
+            require_once(ABSPATH.'wp-admin/includes/user.php');
+            wp_delete_user($user->ID);
+            
+            $this->log_activity('User deleted due to subscription end', array(
+                'user_id' => $user->ID,
+                'email' => $email,
+                'subscription_id' => $subscription_id,
+                'product' => $product_name
+            ));
+        } else {
+            // Remove roles assigned by Gumroad
+            $assigned_roles = get_user_meta($user->ID, 'gumroad_assigned_roles', true);
+            if ($assigned_roles) {
+                $roles = json_decode($assigned_roles, true);
+                if (is_array($roles)) {
+                    foreach ($roles as $role) {
+                        $user->remove_role($role);
+                    }
+                }
+            }
+            
+            update_user_meta($user->ID, 'gumroad_subscription_status', 'cancelled');
+            update_user_meta($user->ID, 'gumroad_subscription_ended_date', current_time('mysql'));
+            
+            $this->log_activity('Subscription cancelled/ended', array(
+                'user_id' => $user->ID,
+                'email' => $email,
+                'subscription_id' => $subscription_id,
+                'product' => $product_name,
+                'action' => $action
+            ));
+        }
+        
+        return $user->ID;
+    }
+    
+    /**
+     * Dashboard page
+     */
+    public function dashboard_page() {
+        $stats = $this->get_dashboard_statistics();
+        
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Gumroad API Dashboard', 'snn'); ?></h1>
+            
+            <!-- Statistics Grid -->
+            <div class="gumroad-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px;">
+                
+                <!-- Total Sales Processed -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Total Sales Processed', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_sales']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('All time', 'snn'); ?></div>
+                </div>
+                
+                <!-- Users Created This Month -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Users Created This Month', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['users_this_month']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php echo date('F Y'); ?></div>
+                </div>
+                
+                <!-- Total Users -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Total Gumroad Users', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_users']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('Active accounts', 'snn'); ?></div>
+                </div>
+                
+                <!-- Email Success Rate -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Email Success Rate', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo $stats['email_success_rate']; ?>%</div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php echo $stats['emails_sent']; ?> <?php _e('sent', 'snn'); ?></div>
+                </div>
+                
+                <!-- Most Popular Product -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Most Popular Product', 'snn'); ?></div>
+                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;"><?php echo esc_html($stats['top_product_name']); ?></div>
+                    <div style="font-size: 24px; font-weight: bold;"><?php echo number_format($stats['top_product_count']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;"><?php _e('purchases', 'snn'); ?></div>
+                </div>
+                
+                <!-- Active Subscriptions -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Active Subscriptions', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['active_subscriptions']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('Currently active', 'snn'); ?></div>
+                </div>
+                
+                <!-- Refunds Processed -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #ff9966 0%, #ff5e62 100%); color: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;"><?php _e('Refunds Processed', 'snn'); ?></div>
+                    <div style="font-size: 36px; font-weight: bold;"><?php echo number_format($stats['total_refunds']); ?></div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;"><?php _e('All time', 'snn'); ?></div>
+                </div>
+                
+                <!-- Recent Activity -->
+                <div class="gumroad-stat-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;"><?php _e('Recent Activity', 'snn'); ?></div>
+                    <div style="font-size: 24px; font-weight: bold; color: #667eea;"><?php echo number_format($stats['activity_last_24h']); ?></div>
+                    <div style="font-size: 12px; margin-top: 10px;"><?php _e('events in last 24 hours', 'snn'); ?></div>
+                </div>
+                
+            </div>
+            
+            <!-- Recent Logs Preview -->
+            <div class="gumroad-section" style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;"><?php _e('Recent Activity Logs', 'snn'); ?></h2>
+                    <a href="<?php echo admin_url('admin.php?page=gumroad-api-logs'); ?>" class="button"><?php _e('View All Logs', 'snn'); ?></a>
+                </div>
+                
+                <?php
+                $recent_logs = array_slice(get_option($this->log_option_name, array()), 0, 5);
+                if (empty($recent_logs)) {
+                    echo '<p>' . __('No recent activity.', 'snn') . '</p>';
+                } else {
+                    echo '<table class="wp-list-table widefat fixed striped">';
+                    echo '<thead><tr><th>' . __('Time', 'snn') . '</th><th>' . __('Type', 'snn') . '</th><th>' . __('Details', 'snn') . '</th></tr></thead><tbody>';
+                    foreach ($recent_logs as $log) {
+                        $data_preview = '';
+                        if (isset($log['data']['email'])) $data_preview .= esc_html($log['data']['email']);
+                        if (isset($log['data']['product'])) $data_preview .= ' - ' . esc_html($log['data']['product']);
+                        echo '<tr>';
+                        echo '<td style="width: 180px;">' . esc_html($log['timestamp']) . '</td>';
+                        echo '<td style="width: 200px;"><strong>' . esc_html($log['type']) . '</strong></td>';
+                        echo '<td>' . $data_preview . '</td>';
+                        echo '</tr>';
+                    }
+                    echo '</tbody></table>';
+                }
+                ?>
+            </div>
+            
+            <!-- Product Statistics -->
+            <?php if (!empty($stats['product_breakdown'])): ?>
+            <div class="gumroad-section" style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2><?php _e('Product Breakdown', 'snn'); ?></h2>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th><?php _e('Product Name', 'snn'); ?></th>
+                            <th style="width: 150px;"><?php _e('Users Created', 'snn'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($stats['product_breakdown'] as $product => $count): ?>
+                        <tr>
+                            <td><?php echo esc_html($product); ?></td>
+                            <td><?php echo number_format($count); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            
+        </div>
+        <?php
+    }
+    
+    /**
+     * Get dashboard statistics
+     */
+    private function get_dashboard_statistics() {
+        global $wpdb;
+        
+        $stats = array(
+            'total_sales' => 0,
+            'users_this_month' => 0,
+            'total_users' => 0,
+            'email_success_rate' => 0,
+            'emails_sent' => 0,
+            'top_product_name' => 'N/A',
+            'top_product_count' => 0,
+            'active_subscriptions' => 0,
+            'total_refunds' => 0,
+            'activity_last_24h' => 0,
+            'product_breakdown' => array()
+        );
+        
+        // Total users with Gumroad metadata
+        $user_query = new WP_User_Query(array(
+            'meta_key' => 'gumroad_sale_id',
+            'meta_compare' => 'EXISTS',
+            'fields' => 'all'
+        ));
+        $all_users = $user_query->get_results();
+        $stats['total_users'] = count($all_users);
+        
+        // Users created this month
+        $month_start = date('Y-m-01 00:00:00');
+        $users_this_month = 0;
+        $product_counts = array();
+        $emails_sent_count = 0;
+        $active_subs = 0;
+        
+        foreach ($all_users as $user) {
+            $created_date = get_user_meta($user->ID, 'gumroad_created_date', true);
+            if ($created_date && $created_date >= $month_start) {
+                $users_this_month++;
+            }
+            
+            // Count emails sent
+            if (get_user_meta($user->ID, 'gumroad_email_sent', true) === 'yes') {
+                $emails_sent_count++;
+            }
+            
+            // Product breakdown
+            $product = get_user_meta($user->ID, 'gumroad_product_name', true);
+            if ($product) {
+                if (!isset($product_counts[$product])) {
+                    $product_counts[$product] = 0;
+                }
+                $product_counts[$product]++;
+            }
+            
+            // Active subscriptions
+            $sub_status = get_user_meta($user->ID, 'gumroad_subscription_status', true);
+            if (empty($sub_status) || $sub_status !== 'cancelled') {
+                $sale_data = get_user_meta($user->ID, 'gumroad_sale_data', true);
+                if ($sale_data) {
+                    $sale_obj = json_decode($sale_data, true);
+                    if (isset($sale_obj['subscription_id']) && !empty($sale_obj['subscription_id'])) {
+                        $active_subs++;
+                    }
+                }
+            }
+        }
+        
+        $stats['users_this_month'] = $users_this_month;
+        $stats['emails_sent'] = $emails_sent_count;
+        $stats['email_success_rate'] = $stats['total_users'] > 0 ? round(($emails_sent_count / $stats['total_users']) * 100) : 0;
+        $stats['active_subscriptions'] = $active_subs;
+        
+        // Most popular product
+        if (!empty($product_counts)) {
+            arsort($product_counts);
+            $stats['product_breakdown'] = array_slice($product_counts, 0, 10);
+            $top_product = array_key_first($product_counts);
+            $stats['top_product_name'] = $top_product;
+            $stats['top_product_count'] = $product_counts[$top_product];
+        }
+        
+        // Count from logs
+        $logs = get_option($this->log_option_name, array());
+        $refund_count = 0;
+        $activity_24h = 0;
+        $cutoff_24h = date('Y-m-d H:i:s', strtotime('-24 hours'));
+        
+        foreach ($logs as $log) {
+            if (isset($log['type']) && strpos(strtolower($log['type']), 'refund') !== false) {
+                $refund_count++;
+            }
+            if (isset($log['timestamp']) && $log['timestamp'] >= $cutoff_24h) {
+                $activity_24h++;
+            }
+            if (isset($log['type']) && $log['type'] === 'User created') {
+                $stats['total_sales']++;
+            }
+        }
+        
+        $stats['total_refunds'] = $refund_count;
+        $stats['activity_last_24h'] = $activity_24h;
+        
+        // If no users, use processed sales count
+        if ($stats['total_sales'] === 0) {
+            $processed_sales = get_option('gumroad_processed_sales', array());
+            $stats['total_sales'] = count($processed_sales);
+        }
+        
+        return $stats;
     }
     
     /**
@@ -664,6 +1076,82 @@ class Gumroad_API_WordPress {
                             <td>
                                 <input type="number" name="sales_limit" id="sales_limit" value="<?php echo esc_attr($settings['sales_limit']); ?>" class="small-text" min="1" max="200" />
                                 <p class="description"><?php _e('Number of recent sales to check each time (default: 50)', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                
+                <!-- Refund Handling Section -->
+                <div class="gumroad-section">
+                    <h2><?php _e('Refund Handling', 'snn'); ?></h2>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><?php _e('Handle Refunds', 'snn'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="handle_refunds" value="1" <?php checked(isset($settings['handle_refunds']) ? $settings['handle_refunds'] : true, 1); ?> />
+                                    <strong><?php _e('Automatically process refunded sales', 'snn'); ?></strong>
+                                </label>
+                                <p class="description"><?php _e('When enabled, the plugin will detect refunded sales and take action.', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php _e('Refund Action', 'snn'); ?></th>
+                            <td>
+                                <label style="display: block; margin: 5px 0;">
+                                    <input type="radio" name="refund_action" value="remove_roles" <?php checked(isset($settings['refund_action']) ? $settings['refund_action'] : 'remove_roles', 'remove_roles'); ?> />
+                                    <?php _e('Remove user roles (recommended)', 'snn'); ?>
+                                </label>
+                                <label style="display: block; margin: 5px 0;">
+                                    <input type="radio" name="refund_action" value="delete_account" <?php checked(isset($settings['refund_action']) ? $settings['refund_action'] : 'remove_roles', 'delete_account'); ?> />
+                                    <?php _e('Delete user account', 'snn'); ?>
+                                </label>
+                                <p class="description"><?php _e('Choose what happens when a refund is detected.', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                
+                <!-- Subscription Management Section -->
+                <div class="gumroad-section">
+                    <h2><?php _e('Subscription Management', 'snn'); ?></h2>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><?php _e('Handle Subscriptions', 'snn'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="handle_subscriptions" value="1" <?php checked(isset($settings['handle_subscriptions']) ? $settings['handle_subscriptions'] : true, 1); ?> />
+                                    <strong><?php _e('Automatically track subscription status changes', 'snn'); ?></strong>
+                                </label>
+                                <p class="description"><?php _e('When enabled, the plugin will monitor subscription cancellations and expirations.', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php _e('Subscription End Action', 'snn'); ?></th>
+                            <td>
+                                <label style="display: block; margin: 5px 0;">
+                                    <input type="radio" name="subscription_cancellation_action" value="remove_roles" <?php checked(isset($settings['subscription_cancellation_action']) ? $settings['subscription_cancellation_action'] : 'remove_roles', 'remove_roles'); ?> />
+                                    <?php _e('Remove user roles (recommended)', 'snn'); ?>
+                                </label>
+                                <label style="display: block; margin: 5px 0;">
+                                    <input type="radio" name="subscription_cancellation_action" value="delete_account" <?php checked(isset($settings['subscription_cancellation_action']) ? $settings['subscription_cancellation_action'] : 'remove_roles', 'delete_account'); ?> />
+                                    <?php _e('Delete user account', 'snn'); ?>
+                                </label>
+                                <p class="description"><?php _e('Choose what happens when a subscription is cancelled or expires.', 'snn'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                
+                <!-- Log Settings Section -->
+                <div class="gumroad-section">
+                    <h2><?php _e('Log Settings', 'snn'); ?></h2>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="log_rotation_days"><?php _e('Log Rotation (days)', 'snn'); ?></label></th>
+                            <td>
+                                <input type="number" name="log_rotation_days" id="log_rotation_days" value="<?php echo esc_attr(isset($settings['log_rotation_days']) ? $settings['log_rotation_days'] : 30); ?>" class="small-text" min="1" />
+                                <p class="description"><?php _e('Automatically delete logs older than this many days (default: 30)', 'snn'); ?></p>
                             </td>
                         </tr>
                     </table>
@@ -872,7 +1360,12 @@ class Gumroad_API_WordPress {
             'log_limit' => isset($post_data['log_limit']) ? intval($post_data['log_limit']) : 500,
             'user_list_per_page' => isset($post_data['user_list_per_page']) ? intval($post_data['user_list_per_page']) : 20,
             'product_roles' => array(),
-            'products' => isset($existing_settings['products']) ? $existing_settings['products'] : array()
+            'products' => isset($existing_settings['products']) ? $existing_settings['products'] : array(),
+            'handle_refunds' => isset($post_data['handle_refunds']) ? true : false,
+            'refund_action' => isset($post_data['refund_action']) ? sanitize_text_field($post_data['refund_action']) : 'remove_roles',
+            'handle_subscriptions' => isset($post_data['handle_subscriptions']) ? true : false,
+            'subscription_cancellation_action' => isset($post_data['subscription_cancellation_action']) ? sanitize_text_field($post_data['subscription_cancellation_action']) : 'remove_roles',
+            'log_rotation_days' => isset($post_data['log_rotation_days']) ? intval($post_data['log_rotation_days']) : 30
         );
         
         // Process product roles
@@ -1125,7 +1618,15 @@ class Gumroad_API_WordPress {
         $per_page = isset($settings['user_list_per_page']) ? intval($settings['user_list_per_page']) : 20;
         $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         
-        // Query users with Gumroad metadata
+        // Get search/filter parameters
+        $search_email = isset($_GET['search_email']) ? sanitize_text_field($_GET['search_email']) : '';
+        $search_product = isset($_GET['search_product']) ? sanitize_text_field($_GET['search_product']) : '';
+        $search_sale_id = isset($_GET['search_sale_id']) ? sanitize_text_field($_GET['search_sale_id']) : '';
+        $filter_date_from = isset($_GET['filter_date_from']) ? sanitize_text_field($_GET['filter_date_from']) : '';
+        $filter_date_to = isset($_GET['filter_date_to']) ? sanitize_text_field($_GET['filter_date_to']) : '';
+        $filter_role = isset($_GET['filter_role']) ? sanitize_text_field($_GET['filter_role']) : '';
+        
+        // Build query args
         $args = array(
             'meta_key' => 'gumroad_sale_id',
             'meta_compare' => 'EXISTS',
@@ -1134,6 +1635,56 @@ class Gumroad_API_WordPress {
             'orderby' => 'registered',
             'order' => 'DESC'
         );
+        
+        // Apply filters
+        $meta_query = array('relation' => 'AND');
+        
+        if (!empty($search_sale_id)) {
+            $meta_query[] = array(
+                'key' => 'gumroad_sale_id',
+                'value' => $search_sale_id,
+                'compare' => 'LIKE'
+            );
+        }
+        
+        if (!empty($search_product)) {
+            $meta_query[] = array(
+                'key' => 'gumroad_product_name',
+                'value' => $search_product,
+                'compare' => 'LIKE'
+            );
+        }
+        
+        if (!empty($filter_date_from)) {
+            $meta_query[] = array(
+                'key' => 'gumroad_created_date',
+                'value' => $filter_date_from . ' 00:00:00',
+                'compare' => '>=',
+                'type' => 'DATETIME'
+            );
+        }
+        
+        if (!empty($filter_date_to)) {
+            $meta_query[] = array(
+                'key' => 'gumroad_created_date',
+                'value' => $filter_date_to . ' 23:59:59',
+                'compare' => '<=',
+                'type' => 'DATETIME'
+            );
+        }
+        
+        if (count($meta_query) > 1) {
+            $args['meta_query'] = $meta_query;
+        }
+        
+        if (!empty($search_email)) {
+            $args['search'] = '*' . $search_email . '*';
+            $args['search_columns'] = array('user_email');
+        }
+        
+        if (!empty($filter_role)) {
+            $args['role__in'] = array($filter_role);
+        }
         
         $user_query = new WP_User_Query($args);
         $users = $user_query->get_results();
@@ -1144,14 +1695,58 @@ class Gumroad_API_WordPress {
         <div class="wrap">
             <h1><?php _e('Gumroad Users', 'snn'); ?></h1>
             
-            <!-- Per Page Settings Section -->
-            <div class="gumroad-section" style="padding: 15px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px;">
-                <form method="post" action="" style="display: flex; align-items: center; gap: 15px;">
-                    <?php wp_nonce_field('gumroad_save_user_list_settings', 'gumroad_user_list_settings_nonce'); ?>
-                    <label for="user_list_per_page"><strong><?php _e('Users per page:', 'snn'); ?></strong></label>
-                    <input type="number" name="user_list_per_page" id="user_list_per_page" value="<?php echo esc_attr($per_page); ?>" class="small-text" min="1" max="100" />
-                    <?php submit_button(__('Save', 'snn'), 'primary', 'submit', false); ?>
-                    <span style="margin-left: auto; color: #666;"><?php printf(__('Total: %d users', 'snn'), $total_users); ?></span>
+            <!-- Search & Filter Section -->
+            <div class="gumroad-section" style="padding: 20px; background: white; border: 1px solid #ccd0d4; margin-bottom: 20px; border-radius: 4px;">
+                <h2 style="margin-top: 0;"><?php _e('Search & Filter', 'snn'); ?></h2>
+                <form method="get" action="">
+                    <input type="hidden" name="page" value="gumroad-api-users" />
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label for="search_email"><strong><?php _e('Email', 'snn'); ?></strong></label>
+                            <input type="text" name="search_email" id="search_email" value="<?php echo esc_attr($search_email); ?>" class="regular-text" placeholder="<?php _e('Search by email...', 'snn'); ?>" />
+                        </div>
+                        
+                        <div>
+                            <label for="search_product"><strong><?php _e('Product', 'snn'); ?></strong></label>
+                            <input type="text" name="search_product" id="search_product" value="<?php echo esc_attr($search_product); ?>" class="regular-text" placeholder="<?php _e('Search by product...', 'snn'); ?>" />
+                        </div>
+                        
+                        <div>
+                            <label for="search_sale_id"><strong><?php _e('Sale ID', 'snn'); ?></strong></label>
+                            <input type="text" name="search_sale_id" id="search_sale_id" value="<?php echo esc_attr($search_sale_id); ?>" class="regular-text" placeholder="<?php _e('Search by sale ID...', 'snn'); ?>" />
+                        </div>
+                        
+                        <div>
+                            <label for="filter_role"><strong><?php _e('Role', 'snn'); ?></strong></label>
+                            <select name="filter_role" id="filter_role" class="regular-text">
+                                <option value=""><?php _e('All Roles', 'snn'); ?></option>
+                                <?php
+                                global $wp_roles;
+                                foreach ($wp_roles->roles as $role_key => $role_info) {
+                                    $selected = ($filter_role === $role_key) ? 'selected' : '';
+                                    echo '<option value="' . esc_attr($role_key) . '" ' . $selected . '>' . esc_html($role_info['name']) . '</option>';
+                                }
+                                ?>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="filter_date_from"><strong><?php _e('Date From', 'snn'); ?></strong></label>
+                            <input type="date" name="filter_date_from" id="filter_date_from" value="<?php echo esc_attr($filter_date_from); ?>" class="regular-text" />
+                        </div>
+                        
+                        <div>
+                            <label for="filter_date_to"><strong><?php _e('Date To', 'snn'); ?></strong></label>
+                            <input type="date" name="filter_date_to" id="filter_date_to" value="<?php echo esc_attr($filter_date_to); ?>" class="regular-text" />
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" class="button button-primary"><?php _e('Apply Filters', 'snn'); ?></button>
+                        <a href="<?php echo admin_url('admin.php?page=gumroad-api-users'); ?>" class="button"><?php _e('Clear Filters', 'snn'); ?></a>
+                        <span style="margin-left: auto; align-self: center; color: #666;"><?php printf(__('Total: %d users', 'snn'), $total_users); ?></span>
+                    </div>
                 </form>
             </div>
             
