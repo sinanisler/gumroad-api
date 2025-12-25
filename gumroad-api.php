@@ -459,15 +459,8 @@ class Gumroad_API_WordPress {
             <form method="post" action="">
                 <?php wp_nonce_field('gumroad_save_settings', 'gumroad_settings_nonce'); ?>
                 
-                <h2 class="nav-tab-wrapper">
-                    <a href="#tab-connection" class="nav-tab nav-tab-active"><?php _e('Connection', 'snn'); ?></a>
-                    <a href="#tab-roles" class="nav-tab"><?php _e('User Management', 'snn'); ?></a>
-                    <a href="#tab-email" class="nav-tab"><?php _e('Welcome Email', 'snn'); ?></a>
-                    <a href="#tab-cron" class="nav-tab"><?php _e('Cron Settings', 'snn'); ?></a>
-                </h2>
-                
-                <!-- Connection Tab -->
-                <div id="tab-connection" class="tab-content" style="display:block;">
+                <!-- API Connection Section -->
+                <div class="gumroad-section">
                     <h2><?php _e('API Connection', 'snn'); ?></h2>
                     <p class="description" style="background: #e7f5ff; padding: 15px; border-left: 4px solid #2271b1;">
                         <strong>ℹ️ <?php _e('API-Based Sales Monitoring', 'snn'); ?></strong><br>
@@ -489,8 +482,8 @@ class Gumroad_API_WordPress {
                     </table>
                 </div>
                 
-                <!-- Roles Tab -->
-                <div id="tab-roles" class="tab-content" style="display:none;">
+                <!-- User Management Section -->
+                <div class="gumroad-section">
                     <h2><?php _e('User Management', 'snn'); ?></h2>
                     <table class="form-table">
                         <tr>
@@ -561,8 +554,8 @@ class Gumroad_API_WordPress {
                     </div>
                 </div>
                 
-                <!-- Email Tab -->
-                <div id="tab-email" class="tab-content" style="display:none;">
+                <!-- Welcome Email Section -->
+                <div class="gumroad-section">
                     <h2><?php _e('Welcome Email Settings', 'snn'); ?></h2>
                     <table class="form-table">
                         <tr>
@@ -609,8 +602,8 @@ class Gumroad_API_WordPress {
                     </table>
                 </div>
                 
-                <!-- Cron Tab -->
-                <div id="tab-cron" class="tab-content" style="display:none;">
+                <!-- Cron Job Settings Section -->
+                <div class="gumroad-section">
                     <h2><?php _e('Cron Job Settings', 'snn'); ?></h2>
                     <table class="form-table">
                         <tr>
@@ -770,16 +763,8 @@ class Gumroad_API_WordPress {
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
         
-        // Tab switching
+        // Load products on page load
         jQuery(document).ready(function($) {
-            $('.nav-tab').click(function(e) {
-                e.preventDefault();
-                $('.nav-tab').removeClass('nav-tab-active');
-                $(this).addClass('nav-tab-active');
-                $('.tab-content').hide();
-                $($(this).attr('href')).show();
-            });
-            
             // Load products from saved settings on page load
             var savedProducts = <?php echo json_encode(isset($settings['products']) ? $settings['products'] : array()); ?>;
             
@@ -793,23 +778,25 @@ class Gumroad_API_WordPress {
                 // No products saved, check if token exists to show helpful message
                 var token = $('#access_token').val();
                 if (token && token.length > 0) {
-                    $('#products-notice').html('<p><strong>👉 Products not loaded yet.</strong></p><p>Go to the "Connection" tab and click <strong>"Test & Fetch Products"</strong> to load your Gumroad products.</p>');
+                    $('#products-notice').html('<p><strong>👉 Products not loaded yet.</strong></p><p>Scroll up to the "API Connection" section and click <strong>"Test & Fetch Products"</strong> to load your Gumroad products.</p>');
                 }
             }
-            
-            // When switching to roles tab, ensure products are visible if they exist
-            $('.nav-tab').click(function(e) {
-                if ($(this).attr('href') === '#tab-roles' && gumroadProducts.length > 0) {
-                    $('#products-notice').hide();
-                    $('#products-list').show();
-                }
-            });
         });
         </script>
         
         <style>
-        .nav-tab-wrapper { margin-bottom: 20px; }
-        .tab-content { padding: 20px; background: white; border: 1px solid #ccd0d4; border-top: none; }
+        .gumroad-section { 
+            padding: 20px; 
+            background: white; 
+            border: 1px solid #ccd0d4; 
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .gumroad-section h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0073aa;
+        }
         .product-role-row { margin-bottom: 10px; }
         .product-roles-checkboxes label { font-weight: normal; }
         #products-list table { margin-top: 20px; }
