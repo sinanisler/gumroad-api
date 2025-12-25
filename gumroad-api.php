@@ -1,4 +1,4 @@
-<?php 
+<?php  
 /** 
  * Plugin Name: Gumroad API WordPress
  * Plugin URI: https://github.com/sinanisler/gumroad-api-wordpress
