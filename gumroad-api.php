@@ -824,7 +824,7 @@ class Gumroad_API_WordPress {
         $settings = array(
             'access_token' => isset($post_data['access_token']) ? sanitize_text_field($post_data['access_token']) : '',
             'auto_create_users' => isset($post_data['auto_create_users']) ? true : false,
-            'default_roles' => isset($post_data['default_roles']) ? array_map('sanitize_text_field', $post_data['default_roles']) : array('subscriber'),
+            'default_roles' => isset($post_data['default_roles']) ? array_map('sanitize_text_field', $post_data['default_roles']) : array(),
             'cron_interval' => isset($post_data['cron_interval']) ? intval($post_data['cron_interval']) : 120,
             'sales_limit' => isset($post_data['sales_limit']) ? intval($post_data['sales_limit']) : 50,
             'send_welcome_email' => isset($post_data['send_welcome_email']) ? true : false,
