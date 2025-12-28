@@ -7,6 +7,9 @@
 
 A WordPress plugin that automatically creates user accounts when customers purchase products from your Gumroad store.
 
+
+<img width="1871" height="942" alt="image" src="https://github.com/user-attachments/assets/2db950f4-62d9-4a8e-acb7-670bd3539426" />
+
 ## Features
 
 - **Automatic User Creation** - Creates WordPress accounts automatically when customers buy from Gumroad
