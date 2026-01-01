@@ -744,21 +744,28 @@ class Gumroad_API_WordPress {
             // Create new user
             $username = $this->generate_username($email);
             $password = wp_generate_password(12, true, true);
-            
+
             $user_id = wp_create_user($username, $password, $email);
-            
+
             if (is_wp_error($user_id)) {
                 return $user_id;
             }
-            
+
             $user = get_user_by('id', $user_id);
-            
+
+            // Set first name from email
+            $first_name = $this->get_first_name_from_email($email);
+            wp_update_user(array(
+                'ID' => $user_id,
+                'first_name' => $first_name
+            ));
+
             // Assign roles
             $user->set_role($roles[0]); // Set primary role
             for ($i = 1; $i < count($roles); $i++) {
                 $user->add_role($roles[$i]); // Add additional roles
             }
-            
+
             // Store Gumroad metadata
             $sale_id = isset($sale_data['id']) ? $sale_data['id'] : '';
             update_user_meta($user_id, 'gumroad_sale_id', $sale_id);
@@ -838,10 +845,13 @@ class Gumroad_API_WordPress {
     
     /**
      * Generate unique username from email
+     * Uses the full email as username for better uniqueness
      */
     private function generate_username($email) {
-        $username = sanitize_user(substr($email, 0, strpos($email, '@')));
-        
+        // Use the full email as username (WordPress allows emails as usernames)
+        $username = sanitize_user($email, true);
+
+        // This should rarely happen since emails are unique, but just in case
         if (username_exists($username)) {
             $i = 1;
             while (username_exists($username . $i)) {
@@ -849,8 +859,29 @@ class Gumroad_API_WordPress {
             }
             $username = $username . $i;
         }
-        
+
         return $username;
+    }
+
+    /**
+     * Extract first name from email
+     * Takes the part before @ and capitalizes it
+     */
+    private function get_first_name_from_email($email) {
+        $local_part = substr($email, 0, strpos($email, '@'));
+
+        // Remove dots, underscores, and numbers to clean it up
+        $clean_name = str_replace(array('.', '_', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'), ' ', $local_part);
+
+        // Capitalize first letter of each word
+        $first_name = ucwords(trim($clean_name));
+
+        // If empty after cleaning, use the original local part
+        if (empty($first_name)) {
+            $first_name = ucfirst($local_part);
+        }
+
+        return $first_name;
     }
     
     /**
