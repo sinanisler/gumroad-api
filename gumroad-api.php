@@ -41,7 +41,6 @@ class Gumroad_API_WordPress {
         add_action('wp_ajax_gumroad_clear_logs', array($this, 'clear_logs'));
         add_action('wp_ajax_gumroad_fetch_products', array($this, 'fetch_products'));
         add_action('wp_ajax_gumroad_uninstall_plugin', array($this, 'uninstall_plugin_data'));
-        add_action('wp_ajax_gumroad_search_pages', array($this, 'search_pages'));
         
         // Add admin styles
         add_action('admin_head', array($this, 'admin_styles'));
@@ -1613,7 +1612,18 @@ class Gumroad_API_WordPress {
                                        name="subscription_renewal_page"
                                        id="subscription_renewal_page"
                                        value="<?php echo esc_attr($selected_page_id); ?>" />
-                                <datalist id="pages-datalist"></datalist>
+                                <datalist id="pages-datalist">
+                                    <?php
+                                    $pages = get_pages(array(
+                                        'post_status' => 'publish',
+                                        'sort_column' => 'post_title',
+                                        'sort_order' => 'ASC'
+                                    ));
+                                    foreach ($pages as $page) {
+                                        echo '<option value="' . esc_attr($page->post_title) . '" data-id="' . esc_attr($page->ID) . '">' . esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')</option>';
+                                    }
+                                    ?>
+                                </datalist>
                                 <button type="button" class="button" onclick="clearRenewalPage()"><?php _e('Clear', 'snn'); ?></button>
                                 <p class="description">
                                     <?php _e('Select a page where users will be redirected when their subscription expires. Users will be forced to visit only this page until they renew their subscription.', 'snn'); ?>
@@ -1807,46 +1817,7 @@ class Gumroad_API_WordPress {
                 }
             }
 
-            // Page search functionality
-            var pageSearchTimeout;
-            $('#subscription_renewal_page_search').on('input', function() {
-                var searchTerm = $(this).val();
-
-                if (searchTerm.length < 2) {
-                    $('#pages-datalist').empty();
-                    return;
-                }
-
-                clearTimeout(pageSearchTimeout);
-                pageSearchTimeout = setTimeout(function() {
-                    // Fetch pages via AJAX
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'gumroad_search_pages',
-                            search: searchTerm,
-                            nonce: '<?php echo wp_create_nonce('gumroad_search_pages'); ?>'
-                        },
-                        success: function(response) {
-                            if (response.success && response.data.pages) {
-                                var datalist = $('#pages-datalist');
-                                datalist.empty();
-
-                                response.data.pages.forEach(function(page) {
-                                    var option = $('<option></option>')
-                                        .attr('value', page.title)
-                                        .attr('data-id', page.id)
-                                        .text(page.title + ' (ID: ' + page.id + ')');
-                                    datalist.append(option);
-                                });
-                            }
-                        }
-                    });
-                }, 300);
-            });
-
-            // Handle page selection
+            // Handle page selection from datalist
             $('#subscription_renewal_page_search').on('change', function() {
                 var selectedTitle = $(this).val();
                 var selectedOption = $('#pages-datalist option[value="' + selectedTitle + '"]');
@@ -2003,48 +1974,6 @@ class Gumroad_API_WordPress {
         }
     }
 
-    /**
-     * Search for pages (AJAX handler)
-     */
-    public function search_pages() {
-        check_ajax_referer('gumroad_search_pages', 'nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array('message' => 'Unauthorized'));
-        }
-
-        $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
-
-        if (empty($search)) {
-            wp_send_json_error(array('message' => 'Search term is required'));
-        }
-
-        $args = array(
-            'post_type' => 'page',
-            'post_status' => 'publish',
-            's' => $search,
-            'posts_per_page' => 20,
-            'orderby' => 'title',
-            'order' => 'ASC'
-        );
-
-        $query = new WP_Query($args);
-        $pages = array();
-
-        if ($query->have_posts()) {
-            while ($query->have_posts()) {
-                $query->the_post();
-                $pages[] = array(
-                    'id' => get_the_ID(),
-                    'title' => get_the_title()
-                );
-            }
-            wp_reset_postdata();
-        }
-
-        wp_send_json_success(array('pages' => $pages));
-    }
-    
     /**
      * Logs page
      */
