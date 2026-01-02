@@ -41,12 +41,16 @@ class Gumroad_API_WordPress {
         add_action('wp_ajax_gumroad_clear_logs', array($this, 'clear_logs'));
         add_action('wp_ajax_gumroad_fetch_products', array($this, 'fetch_products'));
         add_action('wp_ajax_gumroad_uninstall_plugin', array($this, 'uninstall_plugin_data'));
+        add_action('wp_ajax_gumroad_search_pages', array($this, 'search_pages'));
         
         // Add admin styles
         add_action('admin_head', array($this, 'admin_styles'));
         
         // Add plugin row meta for uninstall link
         add_filter('plugin_row_meta', array($this, 'add_plugin_row_meta'), 10, 2);
+
+        // Subscription renewal redirect
+        add_action('template_redirect', array($this, 'check_subscription_renewal_redirect'));
     }
     
     /**
@@ -461,6 +465,7 @@ class Gumroad_API_WordPress {
             'refund_action' => 'remove_roles',
             'handle_subscriptions' => true,
             'subscription_cancellation_action' => 'remove_roles',
+            'subscription_renewal_page' => '', // Page ID for subscription renewal redirect
             'log_rotation_days' => 30
         );
 
@@ -1584,6 +1589,40 @@ class Gumroad_API_WordPress {
                                 <p class="description"><?php _e('Choose what happens when a subscription is cancelled or expires.', 'snn'); ?></p>
                             </td>
                         </tr>
+                        <tr>
+                            <th scope="row"><label for="subscription_renewal_page"><?php _e('Subscription Renewal Page', 'snn'); ?></label></th>
+                            <td>
+                                <?php
+                                $selected_page_id = isset($settings['subscription_renewal_page']) ? $settings['subscription_renewal_page'] : '';
+                                $selected_page_title = '';
+                                if (!empty($selected_page_id)) {
+                                    $page = get_post($selected_page_id);
+                                    if ($page) {
+                                        $selected_page_title = $page->post_title;
+                                    }
+                                }
+                                ?>
+                                <input type="text"
+                                       id="subscription_renewal_page_search"
+                                       class="regular-text"
+                                       placeholder="<?php _e('Search for a page...', 'snn'); ?>"
+                                       value="<?php echo esc_attr($selected_page_title); ?>"
+                                       autocomplete="off"
+                                       list="pages-datalist" />
+                                <input type="hidden"
+                                       name="subscription_renewal_page"
+                                       id="subscription_renewal_page"
+                                       value="<?php echo esc_attr($selected_page_id); ?>" />
+                                <datalist id="pages-datalist"></datalist>
+                                <button type="button" class="button" onclick="clearRenewalPage()"><?php _e('Clear', 'snn'); ?></button>
+                                <p class="description">
+                                    <?php _e('Select a page where users will be redirected when their subscription expires. Users will be forced to visit only this page until they renew their subscription.', 'snn'); ?>
+                                    <?php if (!empty($selected_page_id) && !empty($selected_page_title)): ?>
+                                        <br><strong><?php _e('Currently selected:', 'snn'); ?></strong> <?php echo esc_html($selected_page_title); ?> (ID: <?php echo esc_html($selected_page_id); ?>)
+                                    <?php endif; ?>
+                                </p>
+                            </td>
+                        </tr>
                     </table>
                 </div>
                 
@@ -1743,11 +1782,17 @@ class Gumroad_API_WordPress {
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
         
+        // Clear renewal page selection
+        function clearRenewalPage() {
+            document.getElementById('subscription_renewal_page_search').value = '';
+            document.getElementById('subscription_renewal_page').value = '';
+        }
+
         // Load products on page load
         jQuery(document).ready(function($) {
             // Load products from saved settings on page load
             var savedProducts = <?php echo json_encode(isset($settings['products']) ? $settings['products'] : array()); ?>;
-            
+
             if (savedProducts && savedProducts.length > 0) {
                 // Products exist in database, display them immediately
                 gumroadProducts = savedProducts;
@@ -1761,6 +1806,56 @@ class Gumroad_API_WordPress {
                     $('#products-notice').html('<p><strong>👉 Products not loaded yet.</strong></p><p>Scroll up to the "API Connection" section and click <strong>"Test & Fetch Products"</strong> to load your Gumroad products.</p>');
                 }
             }
+
+            // Page search functionality
+            var pageSearchTimeout;
+            $('#subscription_renewal_page_search').on('input', function() {
+                var searchTerm = $(this).val();
+
+                if (searchTerm.length < 2) {
+                    $('#pages-datalist').empty();
+                    return;
+                }
+
+                clearTimeout(pageSearchTimeout);
+                pageSearchTimeout = setTimeout(function() {
+                    // Fetch pages via AJAX
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'gumroad_search_pages',
+                            search: searchTerm,
+                            nonce: '<?php echo wp_create_nonce('gumroad_search_pages'); ?>'
+                        },
+                        success: function(response) {
+                            if (response.success && response.data.pages) {
+                                var datalist = $('#pages-datalist');
+                                datalist.empty();
+
+                                response.data.pages.forEach(function(page) {
+                                    var option = $('<option></option>')
+                                        .attr('value', page.title)
+                                        .attr('data-id', page.id)
+                                        .text(page.title + ' (ID: ' + page.id + ')');
+                                    datalist.append(option);
+                                });
+                            }
+                        }
+                    });
+                }, 300);
+            });
+
+            // Handle page selection
+            $('#subscription_renewal_page_search').on('change', function() {
+                var selectedTitle = $(this).val();
+                var selectedOption = $('#pages-datalist option[value="' + selectedTitle + '"]');
+
+                if (selectedOption.length > 0) {
+                    var pageId = selectedOption.attr('data-id');
+                    $('#subscription_renewal_page').val(pageId);
+                }
+            });
         });
         </script>
         <?php
@@ -1798,6 +1893,7 @@ class Gumroad_API_WordPress {
             'refund_action' => isset($post_data['refund_action']) ? sanitize_text_field($post_data['refund_action']) : 'remove_roles',
             'handle_subscriptions' => isset($post_data['handle_subscriptions']) ? true : false,
             'subscription_cancellation_action' => isset($post_data['subscription_cancellation_action']) ? sanitize_text_field($post_data['subscription_cancellation_action']) : 'remove_roles',
+            'subscription_renewal_page' => isset($post_data['subscription_renewal_page']) ? intval($post_data['subscription_renewal_page']) : '',
             'log_rotation_days' => isset($post_data['log_rotation_days']) ? intval($post_data['log_rotation_days']) : 30
         );
 
@@ -1871,26 +1967,26 @@ class Gumroad_API_WordPress {
      */
     public function fetch_products() {
         check_ajax_referer('gumroad_fetch_products', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Unauthorized'));
         }
-        
+
         $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
-        
+
         if (empty($token)) {
             wp_send_json_error(array('message' => 'Access token is required'));
         }
-        
+
         $response = wp_remote_get('https://api.gumroad.com/v2/products?access_token=' . $token);
-        
+
         if (is_wp_error($response)) {
             wp_send_json_error(array('message' => 'Failed to fetch products: ' . $response->get_error_message()));
         }
-        
+
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-        
+
         if (isset($data['success']) && $data['success'] && isset($data['products'])) {
             $products = array();
             foreach ($data['products'] as $product) {
@@ -1905,6 +2001,48 @@ class Gumroad_API_WordPress {
             $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
             wp_send_json_error(array('message' => 'API Error: ' . $error_message));
         }
+    }
+
+    /**
+     * Search for pages (AJAX handler)
+     */
+    public function search_pages() {
+        check_ajax_referer('gumroad_search_pages', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+
+        $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+
+        if (empty($search)) {
+            wp_send_json_error(array('message' => 'Search term is required'));
+        }
+
+        $args = array(
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            's' => $search,
+            'posts_per_page' => 20,
+            'orderby' => 'title',
+            'order' => 'ASC'
+        );
+
+        $query = new WP_Query($args);
+        $pages = array();
+
+        if ($query->have_posts()) {
+            while ($query->have_posts()) {
+                $query->the_post();
+                $pages[] = array(
+                    'id' => get_the_ID(),
+                    'title' => get_the_title()
+                );
+            }
+            wp_reset_postdata();
+        }
+
+        wp_send_json_success(array('pages' => $pages));
     }
     
     /**
@@ -2643,8 +2781,98 @@ class Gumroad_API_WordPress {
         
         // 4. Clean up any remaining Gumroad-related options (catch-all)
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE 'gumroad_%'");
-        
+
         return $deleted_data;
+    }
+
+    /**
+     * Check and redirect users with expired subscriptions to renewal page
+     */
+    public function check_subscription_renewal_redirect() {
+        // Don't run on admin pages
+        if (is_admin()) {
+            return;
+        }
+
+        // Check if user is logged in
+        if (!is_user_logged_in()) {
+            return;
+        }
+
+        $current_user = wp_get_current_user();
+
+        // Exception for administrators and editors - they are never affected
+        if (in_array('administrator', $current_user->roles) || in_array('editor', $current_user->roles)) {
+            return;
+        }
+
+        // Get plugin settings
+        $settings = get_option($this->option_name);
+
+        // Check if subscription handling is enabled
+        if (!isset($settings['handle_subscriptions']) || !$settings['handle_subscriptions']) {
+            return;
+        }
+
+        // Get renewal page setting
+        $renewal_page_id = isset($settings['subscription_renewal_page']) ? intval($settings['subscription_renewal_page']) : 0;
+
+        // If no renewal page is set, don't redirect
+        if (empty($renewal_page_id)) {
+            return;
+        }
+
+        // Don't redirect if user is already on the renewal page
+        if (is_page($renewal_page_id)) {
+            return;
+        }
+
+        // Check if user has Gumroad metadata (meaning they were created by this plugin)
+        $gumroad_sale_id = get_user_meta($current_user->ID, 'gumroad_sale_id', true);
+        if (empty($gumroad_sale_id)) {
+            // User was not created by Gumroad, don't redirect
+            return;
+        }
+
+        // Check subscription status
+        $subscription_status = get_user_meta($current_user->ID, 'gumroad_subscription_status', true);
+
+        // If subscription is cancelled or ended, redirect to renewal page
+        if ($subscription_status === 'cancelled') {
+            // Check if user lost their roles (which means subscription was processed as ended)
+            $assigned_roles = get_user_meta($current_user->ID, 'gumroad_assigned_roles', true);
+            if ($assigned_roles) {
+                $roles = json_decode($assigned_roles, true);
+                if (is_array($roles) && !empty($roles)) {
+                    // Check if user still has any of the assigned roles
+                    $has_any_role = false;
+                    foreach ($roles as $role) {
+                        if (in_array($role, $current_user->roles)) {
+                            $has_any_role = true;
+                            break;
+                        }
+                    }
+
+                    // If user doesn't have any of their assigned roles, subscription has ended
+                    if (!$has_any_role) {
+                        // Get product information for logging
+                        $product_name = get_user_meta($current_user->ID, 'gumroad_product_name', true);
+
+                        $this->log_activity('Subscription renewal redirect', array(
+                            'user_id' => $current_user->ID,
+                            'email' => $current_user->user_email,
+                            'product' => $product_name,
+                            'subscription_status' => $subscription_status,
+                            'renewal_page_id' => $renewal_page_id
+                        ));
+
+                        // Redirect to renewal page
+                        wp_redirect(get_permalink($renewal_page_id));
+                        exit;
+                    }
+                }
+            }
+        }
     }
 }
 
