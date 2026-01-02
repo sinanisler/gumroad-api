@@ -446,9 +446,9 @@ class Gumroad_API_WordPress {
         // Set default options
         $default_options = array(
             'access_token' => '',
-            'auto_create_users' => false,
             'default_roles' => array('subscriber'),
             'product_roles' => array(),
+            'product_auto_create' => array(), // Per-product auto create users setting
             'products' => array(),
             'cron_interval' => 120,
             'sales_limit' => 50,
@@ -463,11 +463,28 @@ class Gumroad_API_WordPress {
             'subscription_cancellation_action' => 'remove_roles',
             'log_rotation_days' => 30
         );
-        
+
         if (!get_option($this->option_name)) {
             add_option($this->option_name, $default_options);
+        } else {
+            // Backward compatibility: migrate old auto_create_users to product-specific settings
+            $existing_settings = get_option($this->option_name);
+            if (isset($existing_settings['auto_create_users']) && $existing_settings['auto_create_users']) {
+                // If global auto_create_users was enabled, enable it for all existing products
+                if (!isset($existing_settings['product_auto_create'])) {
+                    $existing_settings['product_auto_create'] = array();
+                    if (isset($existing_settings['products']) && is_array($existing_settings['products'])) {
+                        foreach ($existing_settings['products'] as $product) {
+                            $existing_settings['product_auto_create'][$product['id']] = true;
+                        }
+                    }
+                }
+                // Remove old setting
+                unset($existing_settings['auto_create_users']);
+                update_option($this->option_name, $existing_settings);
+            }
         }
-        
+
         // Schedule cron
         $this->schedule_cron();
     }
@@ -697,30 +714,31 @@ class Gumroad_API_WordPress {
         $email = isset($sale_data['email']) ? sanitize_email($sale_data['email']) : '';
         $product_name = isset($sale_data['product_name']) ? sanitize_text_field($sale_data['product_name']) : '';
         $product_id = isset($sale_data['product_id']) ? sanitize_text_field($sale_data['product_id']) : '';
-        
+
         if (empty($email)) {
             return new WP_Error('invalid_email', 'Email address is required');
         }
-        
+
         $settings = get_option($this->option_name);
-        $auto_create_users = isset($settings['auto_create_users']) ? $settings['auto_create_users'] : false;
-        
-        // Check if auto user creation is disabled
-        if (!$auto_create_users) {
+        $product_auto_create = isset($settings['product_auto_create']) ? $settings['product_auto_create'] : array();
+
+        // Check if auto user creation is enabled for THIS specific product
+        if (empty($product_id) || !isset($product_auto_create[$product_id]) || !$product_auto_create[$product_id]) {
             $this->log_activity('User creation skipped', array(
-                'reason' => 'Auto create users is disabled',
+                'reason' => 'Auto create users is not enabled for this product',
                 'email' => $email,
-                'product' => $product_name
+                'product' => $product_name,
+                'product_id' => $product_id
             ));
-            return new WP_Error('auto_create_disabled', 'Automatic user creation is disabled');
+            return new WP_Error('auto_create_disabled', 'Automatic user creation is not enabled for this product');
         }
-        
+
         // Check if user exists
         $user = get_user_by('email', $email);
-        
+
         $default_roles = isset($settings['default_roles']) ? $settings['default_roles'] : array('subscriber');
         $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
-        
+
         // Determine roles for this product
         $roles = array();
         if (!empty($product_id) && isset($product_roles[$product_id]) && !empty($product_roles[$product_id])) {
@@ -728,7 +746,7 @@ class Gumroad_API_WordPress {
         } else {
             $roles = $default_roles;
         }
-        
+
         // If no roles configured, skip user creation
         if (empty($roles)) {
             $this->log_activity('User creation skipped', array(
@@ -1342,7 +1360,6 @@ class Gumroad_API_WordPress {
         }
         
         $settings = get_option($this->option_name);
-        $auto_create_users = isset($settings['auto_create_users']) ? $settings['auto_create_users'] : false;
         $default_roles = isset($settings['default_roles']) ? $settings['default_roles'] : array('subscriber');
         $product_roles = isset($settings['product_roles']) ? $settings['product_roles'] : array();
         
@@ -1381,19 +1398,9 @@ class Gumroad_API_WordPress {
                     <h2><?php _e('User Management', 'snn'); ?></h2>
                     <table class="form-table">
                         <tr>
-                            <th scope="row"><?php _e('Auto Create Users', 'snn'); ?></th>
+                            <th scope="row"><?php _e('Default User Roles', 'snn'); ?></th>
                             <td>
-                                <label>
-                                    <input type="checkbox" name="auto_create_users" value="1" <?php checked($auto_create_users, 1); ?> />
-                                    <strong><?php _e('Automatically create WordPress users for Gumroad purchases', 'snn'); ?></strong>
-                                </label>
-                                <p class="description"><?php _e('When enabled, a new WordPress user will be created for each purchase.', 'snn'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><?php _e('Assign User Roles', 'snn'); ?></th>
-                            <td>
-                                <p class="description"><?php _e('Select which role(s) to assign to newly created users. You can select multiple roles.', 'snn'); ?></p>
+                                <p class="description"><?php _e('Select default role(s) to assign to newly created users. These roles will be used when no product-specific roles are configured.', 'snn'); ?></p>
                                 <?php
                                 global $wp_roles;
                                 $all_roles = $wp_roles->roles;
@@ -1408,11 +1415,11 @@ class Gumroad_API_WordPress {
                             </td>
                         </tr>
                     </table>
-                    
+
                     <hr>
-                    
-                    <h3><?php _e('Product-Specific Role Assignment', 'snn'); ?></h3>
-                    <p><?php _e('Configure which roles should be assigned for each product purchase. If no roles are selected for a product, the default "Assign User Roles" setting above will be used.', 'snn'); ?></p>
+
+                    <h3><?php _e('Product-Specific Configuration', 'snn'); ?></h3>
+                    <p><?php _e('For each product below, you can enable automatic user creation and configure specific roles. This gives you complete control over which products trigger user account creation.', 'snn'); ?></p>
                     
                     <div id="products-notice" class="snn-gumroad-products-notice">
                         <p><strong><?php _e('⚠️ Please test your API connection first to load your products.', 'snn'); ?></strong></p>
@@ -1431,6 +1438,7 @@ class Gumroad_API_WordPress {
                                     <th><?php _e('Product Name', 'snn'); ?></th>
                                     <th><?php _e('Product ID', 'snn'); ?></th>
                                     <th><?php _e('Status', 'snn'); ?></th>
+                                    <th style="width: 150px;"><?php _e('Auto Create Users', 'snn'); ?></th>
                                     <th><?php _e('Select roles to assign for this product', 'snn'); ?></th>
                                 </tr>
                             </thead>
@@ -1440,9 +1448,10 @@ class Gumroad_API_WordPress {
                         </table>
                         <p class="description">
                             <strong><?php _e('💡 How it works:', 'snn'); ?></strong><br>
-                            • <?php _e('Configure specific roles for each product, or leave unchecked to use default roles (backward compatible)', 'snn'); ?><br>
-                            • <?php _e('Only products with assigned roles will trigger user creation', 'snn'); ?><br>
-                            • <?php _e('If NO products have roles assigned, ALL purchases will create users with default roles (backward compatible)', 'snn'); ?>
+                            • <?php _e('Enable "Auto Create Users" for a product to automatically create WordPress accounts when that product is purchased', 'snn'); ?><br>
+                            • <?php _e('Select specific roles for each product, or leave unchecked to use default roles', 'snn'); ?><br>
+                            • <?php _e('If "Auto Create Users" is disabled for a product, no accounts will be created regardless of roles configured', 'snn'); ?><br>
+                            • <?php _e('This gives you complete control - no automatic user creation happens unless explicitly enabled per product', 'snn'); ?>
                         </p>
                     </div>
                 </div>
@@ -1684,16 +1693,24 @@ class Gumroad_API_WordPress {
             // Show save reminder
             jQuery('#save-products-reminder').remove();
             jQuery('<div id="save-products-reminder" class="snn-gumroad-save-reminder"><p><strong>⚠️ Products loaded successfully!</strong> Please scroll down and click <strong>"Save Changes"</strong> to persist these products.</p></div>').insertBefore('#products-list');
-            
+
             var savedProductRoles = <?php echo json_encode($product_roles); ?>;
-            
+            var savedProductAutoCreate = <?php echo json_encode(isset($settings['product_auto_create']) ? $settings['product_auto_create'] : array()); ?>;
+
             products.forEach(function(product) {
-                var statusBadge = product.published 
-                    ? '<span style="color: green;">● Published</span>' 
+                var statusBadge = product.published
+                    ? '<span style="color: green;">● Published</span>'
                     : '<span style="color: gray;">● Unpublished</span>';
-                
+
                 var savedRoles = savedProductRoles[product.id] || [];
-                
+                var autoCreateEnabled = savedProductAutoCreate[product.id] || false;
+
+                // Auto create users checkbox
+                var autoCreateHtml = '<label style="display: flex; align-items: center; justify-content: center;">' +
+                    '<input type="checkbox" name="product_auto_create[' + product.id + ']" value="1" ' +
+                    (autoCreateEnabled ? 'checked' : '') + ' style="margin: 0;" />' +
+                    '</label>';
+
                 var rolesHtml = '<div class="snn-gumroad-product-roles-checkboxes">';
                 <?php
                 global $wp_roles;
@@ -1702,14 +1719,15 @@ class Gumroad_API_WordPress {
                 }
                 ?>
                 rolesHtml += '</div>';
-                
+
                 var row = '<tr>' +
                     '<td><strong>' + escapeHtml(product.name) + '</strong></td>' +
                     '<td><code>' + escapeHtml(product.id) + '</code></td>' +
                     '<td>' + statusBadge + '</td>' +
+                    '<td style="text-align: center;">' + autoCreateHtml + '</td>' +
                     '<td>' + rolesHtml + '<input type="hidden" name="product_ids[]" value="' + escapeHtml(product.id) + '" /></td>' +
                     '</tr>';
-                
+
                 tbody.append(row);
             });
         }
@@ -1762,10 +1780,9 @@ class Gumroad_API_WordPress {
     private function save_settings($post_data) {
         // Get existing settings to preserve products if not updated
         $existing_settings = get_option($this->option_name, array());
-        
+
         $settings = array(
             'access_token' => isset($post_data['access_token']) ? sanitize_text_field($post_data['access_token']) : '',
-            'auto_create_users' => isset($post_data['auto_create_users']) ? true : false,
             'default_roles' => isset($post_data['default_roles']) ? array_map('sanitize_text_field', $post_data['default_roles']) : array(),
             'cron_interval' => isset($post_data['cron_interval']) ? intval($post_data['cron_interval']) : 120,
             'sales_limit' => isset($post_data['sales_limit']) ? intval($post_data['sales_limit']) : 50,
@@ -1775,6 +1792,7 @@ class Gumroad_API_WordPress {
             'log_limit' => isset($post_data['log_limit']) ? intval($post_data['log_limit']) : 500,
             'user_list_per_page' => isset($post_data['user_list_per_page']) ? intval($post_data['user_list_per_page']) : 20,
             'product_roles' => array(),
+            'product_auto_create' => array(),
             'products' => isset($existing_settings['products']) ? $existing_settings['products'] : array(),
             'handle_refunds' => isset($post_data['handle_refunds']) ? true : false,
             'refund_action' => isset($post_data['refund_action']) ? sanitize_text_field($post_data['refund_action']) : 'remove_roles',
@@ -1782,7 +1800,7 @@ class Gumroad_API_WordPress {
             'subscription_cancellation_action' => isset($post_data['subscription_cancellation_action']) ? sanitize_text_field($post_data['subscription_cancellation_action']) : 'remove_roles',
             'log_rotation_days' => isset($post_data['log_rotation_days']) ? intval($post_data['log_rotation_days']) : 30
         );
-        
+
         // Process product roles
         if (isset($post_data['product_roles']) && is_array($post_data['product_roles'])) {
             foreach ($post_data['product_roles'] as $product_id => $roles) {
@@ -1791,7 +1809,14 @@ class Gumroad_API_WordPress {
                 }
             }
         }
-        
+
+        // Process product auto create settings
+        if (isset($post_data['product_auto_create']) && is_array($post_data['product_auto_create'])) {
+            foreach ($post_data['product_auto_create'] as $product_id => $enabled) {
+                $settings['product_auto_create'][sanitize_text_field($product_id)] = true;
+            }
+        }
+
         // Process products data
         if (isset($post_data['products_data'])) {
             $products_json = stripslashes($post_data['products_data']);
@@ -1800,9 +1825,9 @@ class Gumroad_API_WordPress {
                 $settings['products'] = $products;
             }
         }
-        
+
         update_option($this->option_name, $settings);
-        
+
         // Reschedule cron with new interval
         $this->schedule_cron();
     }
