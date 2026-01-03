@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 
 // Configuration
 $github_repo_owner = 'sinanisler';
-$github_repo_name  = 'gumroad-api-wordpress';
+$github_repo_name  = 'gumroad-api';
 $plugin_slug       = 'gumroad-api';
 $plugin_file       = 'gumroad-api/gumroad-api.php';
 
