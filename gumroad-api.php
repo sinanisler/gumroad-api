@@ -5,7 +5,7 @@
  * Description: Connect your WordPress site with Gumroad API to automatically create user accounts when customers make a purchase. Uses scheduled API polling to monitor sales.
  * Version: 0.7
  * Author: sinanisler
- * Author URI: https://sinanisler.com
+ * Author URI: https://github.com/sinanisler
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: snn
